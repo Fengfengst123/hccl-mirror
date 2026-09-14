@@ -16,6 +16,7 @@
 
 using namespace AscendC;
 
+#if defined(HCCL_AIV_ACLGRAPH_SK)
 #define AIV_ALLGATHER_KERNEL_DECL(type) extern "C" __aicore__ void aiv_all_gather_##type##_inner(KERNEL_ARGS_DEF);
 
 #define AIV_ALLGATHER_KERNEL_DEF(type)                                        \
@@ -34,6 +35,15 @@ using namespace AscendC;
     AIV_ALLGATHER_KERNEL_DEF(type);          \
     GLOBAL_FUNC_DEF(aiv_all_gather_##type);  \
     SuperKernelBind(aiv_all_gather_##type)
+#endif
+#else // 未启用 aclgraph SK（960 等）：保持原 __global__ 入口导出
+#define AIV_ALLGATHER_KERNEL_BATCH_DEF(type)                                     \
+    extern "C" __global__ __aicore__ void aiv_all_gather_##type(KERNEL_ARGS_DEF) \
+    {                                                                            \
+        AIV_INFO_HINT;                                                           \
+        return AivAllGatherV2Mesh1D<type>(KERNEL_ARGS_CALL);                     \
+    }                                                                            \
+    EXPORT_AIV_META_INFO(aiv_all_gather_##type)
 #endif
 
 // 定义各算子各数据类型Kernel入口

@@ -15,6 +15,7 @@
 #include "aiv_all_to_all_mesh_1D.h"
 using namespace AscendC;
 
+#if defined(HCCL_AIV_ACLGRAPH_SK)
 #define AIV_ALL_TO_ALL_KERNEL_DECL(type) extern "C" __aicore__ void aiv_alltoall_##type##_inner(KERNEL_ARGS_DEF);
 
 #define AIV_ALL_TO_ALL_KERNEL_DEF(type)                                     \
@@ -33,6 +34,15 @@ using namespace AscendC;
     AIV_ALL_TO_ALL_KERNEL_DEF(type);          \
     GLOBAL_FUNC_DEF(aiv_alltoall_##type);     \
     SuperKernelBind(aiv_alltoall_##type)
+#endif
+#else // 未启用 aclgraph SK（960 等）：保持原 __global__ 入口导出
+#define AIV_ALL_TO_ALL_KERNEL_BATCH_DEF(type)                                  \
+    extern "C" __global__ __aicore__ void aiv_alltoall_##type(KERNEL_ARGS_DEF) \
+    {                                                                          \
+        AIV_INFO_HINT;                                                         \
+        AivAlltoAllV2Mesh1D<type>(KERNEL_ARGS_CALL);                           \
+    }                                                                          \
+    EXPORT_AIV_META_INFO(aiv_alltoall_##type)
 #endif
 
 // 定义各算子各数据类型Kernel入口

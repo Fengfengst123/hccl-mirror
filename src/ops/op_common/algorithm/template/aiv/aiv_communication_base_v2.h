@@ -14,6 +14,9 @@
 #include "sync_interface.h"
 #include "aiv_defines.h"
 
+// aclgraph SuperKernel 特性编译开关，仅在 950（_910_95，dav-c310-vec）的编译命令中定义
+#if defined(HCCL_AIV_ACLGRAPH_SK)
+
 // __sk__函数参数
 
 struct SkArgsStruct {
@@ -92,6 +95,8 @@ struct SkArgsStruct {
 #define GLOBAL_FUNC_DEF(kernel_name)                                                                              \
     extern "C" __global__ __aicore__ void kernel_name(KERNEL_ARGS_DEF) { kernel_name##_inner(KERNEL_ARGS_CALL); } \
     EXPORT_AIV_META_INFO(kernel_name)
+
+#endif // HCCL_AIV_ACLGRAPH_SK
 
 class AivCommBase {
 public:

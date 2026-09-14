@@ -48,7 +48,7 @@ add_custom_target(hccl_aiv_all_to_all_op_910_95 ALL
 )
 add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/hccl_aiv_all_to_all_op_910_95_tmp.o
         COMMAND ${CCE_DIR}/ccec -c -x cce -O2 ${CMAKE_CURRENT_SOURCE_DIR}/aiv_all_to_all_op.h -o ${CMAKE_CURRENT_BINARY_DIR}/hccl_aiv_all_to_all_op_910_95_tmp.o --cce-aicore-arch=dav-c310-vec
-        -DASCENDC_DUMP=${ASCENDC_DUMP}
+        -DASCENDC_DUMP=${ASCENDC_DUMP} -DHCCL_AIV_ACLGRAPH_SK
         --cce-aicore-only -mllvm -cce-aicore-function-stack-size=0x8000 -mllvm -cce-aicore-stack-size=0x8000
         "-I$<JOIN:$<TARGET_PROPERTY:asc_kernel_headers,INTERFACE_INCLUDE_DIRECTORIES>,;-I>"
         "-I$<JOIN:$<TARGET_PROPERTY:kernel_tiling_headers,INTERFACE_INCLUDE_DIRECTORIES>,;-I>"
@@ -61,7 +61,7 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/hccl_aiv_all_to_all_op_910
 )
 add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/hccl_aiv_all_to_all_op_sk1.o
         COMMAND ${CCE_DIR}/ccec -c -x cce -O2 ${CMAKE_CURRENT_SOURCE_DIR}/aiv_all_to_all_op.h -o ${CMAKE_CURRENT_BINARY_DIR}/hccl_aiv_all_to_all_op_sk1.o
-        -D__ASCENDC_ENABLE_SUPER_KERNEL__ -DBUILD_SK_FUNC -DSK_FUNC_ID=1 --cce-aicore-arch=dav-c310-vec
+        -D__ASCENDC_ENABLE_SUPER_KERNEL__ -DHCCL_AIV_ACLGRAPH_SK -DBUILD_SK_FUNC -DSK_FUNC_ID=1 --cce-aicore-arch=dav-c310-vec
         --cce-aicore-only -mllvm -cce-aicore-function-stack-size=0x8000 -mllvm -cce-aicore-stack-size=0x8000
         "-I$<JOIN:$<TARGET_PROPERTY:asc_kernel_headers,INTERFACE_INCLUDE_DIRECTORIES>,;-I>"
         "-I$<JOIN:$<TARGET_PROPERTY:kernel_tiling_headers,INTERFACE_INCLUDE_DIRECTORIES>,;-I>"
@@ -74,7 +74,7 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/hccl_aiv_all_to_all_op_sk1
 )
 add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/hccl_aiv_all_to_all_op_sk2.o
         COMMAND ${CCE_DIR}/ccec -c -x cce -O2 ${CMAKE_CURRENT_SOURCE_DIR}/aiv_all_to_all_op.h -o ${CMAKE_CURRENT_BINARY_DIR}/hccl_aiv_all_to_all_op_sk2.o
-        -D__ASCENDC_ENABLE_SUPER_KERNEL__ -DBUILD_SK_FUNC -DSK_FUNC_ID=2 --cce-aicore-arch=dav-c310-vec
+        -D__ASCENDC_ENABLE_SUPER_KERNEL__ -DHCCL_AIV_ACLGRAPH_SK -DBUILD_SK_FUNC -DSK_FUNC_ID=2 --cce-aicore-arch=dav-c310-vec
         --cce-aicore-only -mllvm -cce-aicore-function-stack-size=0x8000 -mllvm -cce-aicore-stack-size=0x8000
         "-I$<JOIN:$<TARGET_PROPERTY:asc_kernel_headers,INTERFACE_INCLUDE_DIRECTORIES>,;-I>"
         "-I$<JOIN:$<TARGET_PROPERTY:kernel_tiling_headers,INTERFACE_INCLUDE_DIRECTORIES>,;-I>"
@@ -87,7 +87,7 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/hccl_aiv_all_to_all_op_sk2
 )
 add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/hccl_aiv_all_to_all_op_sk3.o
         COMMAND ${CCE_DIR}/ccec -c -x cce -O2 ${CMAKE_CURRENT_SOURCE_DIR}/aiv_all_to_all_op.h -o ${CMAKE_CURRENT_BINARY_DIR}/hccl_aiv_all_to_all_op_sk3.o
-        -D__ASCENDC_ENABLE_SUPER_KERNEL__ -DBUILD_SK_FUNC -DSK_FUNC_ID=3 --cce-aicore-arch=dav-c310-vec
+        -D__ASCENDC_ENABLE_SUPER_KERNEL__ -DHCCL_AIV_ACLGRAPH_SK -DBUILD_SK_FUNC -DSK_FUNC_ID=3 --cce-aicore-arch=dav-c310-vec
         --cce-aicore-only -mllvm -cce-aicore-function-stack-size=0x8000 -mllvm -cce-aicore-stack-size=0x8000
         "-I$<JOIN:$<TARGET_PROPERTY:asc_kernel_headers,INTERFACE_INCLUDE_DIRECTORIES>,;-I>"
         "-I$<JOIN:$<TARGET_PROPERTY:kernel_tiling_headers,INTERFACE_INCLUDE_DIRECTORIES>,;-I>"
@@ -100,7 +100,7 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/hccl_aiv_all_to_all_op_sk3
 )
 add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/hccl_aiv_all_to_all_op_sk4.o
         COMMAND ${CCE_DIR}/ccec -c -x cce -O2 ${CMAKE_CURRENT_SOURCE_DIR}/aiv_all_to_all_op.h -o ${CMAKE_CURRENT_BINARY_DIR}/hccl_aiv_all_to_all_op_sk4.o
-        -D__ASCENDC_ENABLE_SUPER_KERNEL__ -DBUILD_SK_FUNC -DSK_FUNC_ID=4 --cce-aicore-arch=dav-c310-vec
+        -D__ASCENDC_ENABLE_SUPER_KERNEL__ -DHCCL_AIV_ACLGRAPH_SK -DBUILD_SK_FUNC -DSK_FUNC_ID=4 --cce-aicore-arch=dav-c310-vec
         --cce-aicore-only -mllvm -cce-aicore-function-stack-size=0x8000 -mllvm -cce-aicore-stack-size=0x8000
         "-I$<JOIN:$<TARGET_PROPERTY:asc_kernel_headers,INTERFACE_INCLUDE_DIRECTORIES>,;-I>"
         "-I$<JOIN:$<TARGET_PROPERTY:kernel_tiling_headers,INTERFACE_INCLUDE_DIRECTORIES>,;-I>"

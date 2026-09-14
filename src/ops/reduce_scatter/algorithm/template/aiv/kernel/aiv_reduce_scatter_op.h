@@ -20,6 +20,7 @@
 
 using namespace AscendC;
 
+#if defined(HCCL_AIV_ACLGRAPH_SK)
 #define AIV_REDUCE_SCATTER_KERNEL_DECL(type) \
     extern "C" __aicore__ void aiv_reduce_scatter_##type##_inner(KERNEL_ARGS_DEF);
 
@@ -45,6 +46,21 @@ using namespace AscendC;
     AIV_REDUCE_SCATTER_KERNEL_DEF(type);          \
     GLOBAL_FUNC_DEF(aiv_reduce_scatter_##type);   \
     SuperKernelBind(aiv_reduce_scatter_##type)
+#endif
+#else // 未启用 aclgraph SK（960 等）：保持原 __global__ 入口导出
+#define AIV_REDUCE_SCATTER_KERNEL_BATCH_DEF(type)                                    \
+    extern "C" __global__ __aicore__ void aiv_reduce_scatter_##type(KERNEL_ARGS_DEF) \
+    {                                                                                \
+        AIV_INFO_HINT;                                                               \
+        if (numBlocks > 2 * rankSize) {                                              \
+            AivReduceScatterV2Mesh1DBigData<type>(KERNEL_ARGS_CALL);                 \
+        } else if (numBlocks >= rankSize) {                                          \
+            AivReduceScatterV2LocalTree<type>(KERNEL_ARGS_CALL);                     \
+        } else {                                                                     \
+            AivReduceScatterV2LocalTreeCoreCtrl<type>(KERNEL_ARGS_CALL);             \
+        }                                                                            \
+    }                                                                                \
+    EXPORT_AIV_META_INFO(aiv_reduce_scatter_##type)
 #endif
 
 // 定义各算子各数据类型Kernel入口
