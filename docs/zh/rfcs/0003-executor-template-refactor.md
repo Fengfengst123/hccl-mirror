@@ -214,10 +214,10 @@ virtual HcclResult GetRes(AlgResourceRequest &res) const;
 ```
 
 
-#### 4. REGISTER_TEMPLATE — Template 工厂注册
+#### 4. REGISTER_RE_TEMPLATE — Template 工厂注册
 
 ```cpp
-#define REGISTER_TEMPLATE(cmdType, algType, TemplateClass)
+#define REGISTER_RE_TEMPLATE(cmdType, algType, TemplateClass)
 ```
 
 将 Template 类注册进全局工厂表，框架内部通过 `GetTemplate()` 按 `TemplateDesc` 查表创建实例。新增 Template 时调用此宏即可，无需修改 `GetTemplate` 本身。
@@ -1143,7 +1143,7 @@ protected:
 #include "aicpu/xxx_template.h"
 
 // 注册 Template 类到工厂表
-REGISTER_TEMPLATE(HCCL_CMD_ALLGATHER, HCCL_ALGO_TYPE_XXX, XxxTemplate);
+REGISTER_RE_TEMPLATE(HCCL_CMD_ALLGATHER, HCCL_ALGO_TYPE_XXX, XxxTemplate);
 ```
 
 #### 流程统一

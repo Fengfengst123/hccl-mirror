@@ -9,6 +9,7 @@
  */
 
 #include "allgather_nhr_template.h"
+#include "template_factory.h"
 
 namespace ops_hccl {
 

@@ -214,10 +214,10 @@ virtual HcclResult GetRes(AlgResourceRequest &res) const;
 ```
 
 
-#### 4. REGISTER_TEMPLATE — Template Factory Registration
+#### 4. REGISTER_RE_TEMPLATE — Template Factory Registration
 
 ```cpp
-#define REGISTER_TEMPLATE(cmdType, algType, TemplateClass)
+#define REGISTER_RE_TEMPLATE(cmdType, algType, TemplateClass)
 ```
 
 Registers the Template class into the global factory table; the framework internally creates instances via `GetTemplate()` by looking up `TemplateDesc`. When adding a new Template, simply call this macro—no need to modify `GetTemplate` itself.
@@ -1143,7 +1143,7 @@ File: `experimental/ops/op_common/recursive_executor/template/aicpu/xxx_template
 #include "aicpu/xxx_template.h"
 
 // Register Template class into factory table
-REGISTER_TEMPLATE(HCCL_CMD_ALLGATHER, HCCL_ALGO_TYPE_XXX, XxxTemplate);
+REGISTER_RE_TEMPLATE(HCCL_CMD_ALLGATHER, HCCL_ALGO_TYPE_XXX, XxxTemplate);
 ```
 
 #### Unified Workflow

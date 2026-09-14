@@ -191,7 +191,7 @@ executor 继承自 `InsCollAlgBase`，须实现以下纯虚/关键虚函数：
 | `CalcAlgHierarchyInfo` | 拓扑匹配入口：实例化 `AlgTopoMatch` 并调用其 `MatchTopo`，计算各通信层级的算法层次信息 | `comm` 通信域句柄；`topoInfo` 拓扑详情（userRank/rankSize/网络层级，出参）；`algHierarchyInfo` 算法层次信息（出参） |
 | `CalcRes` | 资源计算入口：按 topo 层级构造 template 实例并委托其 `CalcRes` 计算所需 channel/thread/buffer | `comm` 通信域；`param` 算子参数；`topoInfo` 拓扑详情；`algHierarchyInfo` 由 `CalcAlgHierarchyInfo` 产出；`resourceRequest` 资源请求（出参） |
 | `CalcCostCoeff` | 成本建模入口：构造 `CalcCostCoeffParam`（`rankSize`/`dataRatio`/`netType` 等）委托模板 `CalcCostCoeff` 计算带宽、时延成本系数 A/B/C/D，供 selection cost 竞争 | `comm` 通信域；`topoInfo` 拓扑详情；`algName` 算法名；`param` 算子参数 |
-| `GetAlgNetMeta` | 组网元信息：返回 `AlgNetMeta`（`netTypes`/`intraGroupMode`/`groupSizes`），描述各 template 的网络类型与 cost 组内聚合方式 | `topoInfo` 拓扑详情 |
+| `GetAlgNetMeta` | 组网元信息：返回 `AlgNetMeta`（`netTypes`/`intraGroupMode`/`groupSizes`），描述各 template 的网络类型与 cost 组内聚合方式 | `topoInfo` 拓扑详情；`param` 算子参数；`algName` 算法名 |
 | `Orchestrate` | 数据面执行入口：设置 maxTmpMemSize_/channels_/threads_ 等基类成员，校验数据类型与溢出，按 loop 编排下发 | `param` 算子参数；`resCtx` 序列化资源上下文 |
 | `FastLaunch` | 快速下发：从预存上下文取 thread/kernel 改写地址后直发，避免重复编排 | `param` 算子参数；`resCtx` 由 `FastLaunchSaveCtx` 预存的 `CcuFastLaunchCtx` |
 
