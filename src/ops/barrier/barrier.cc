@@ -8,9 +8,6 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
-#ifndef _GNU_SOURCE
-#define _GNU_SOURCE // 为 dlsym 的 RTLD_NEXT 提供声明
-#endif
 #include <dlfcn.h>
 
 #include "barrier.h"
@@ -24,19 +21,25 @@ using namespace ops_hccl;
 namespace {
 // 回退到旧 barrier 流程（hcomm 的老 HcclBarrier）。
 // 旧流程 HcclBarrier 由 hcomm 导出，与本仓分发器同名，无法按名直接调用（会递归到
-// 自身），故用 dlsym(RTLD_NEXT) 跳过本 .so 自身定义，定位到加载顺序中下一个
-// HcclBarrier（即 hcomm 的旧 HcclBarrier）。结果用 static 缓存，仅查找一次。
-// 该机制统一覆盖：配套部署、旧 hcomm + 新 hccl、以及版本/芯片不满足新流程的回退。
-// 前提：libhccl 依赖并先于 libhcomm 加载（DT_NEEDED 天然成立）。
+// 自身），故显式 HcclDlopen("libhcomm.so") 并从句柄 HcclDlsym。与 RTLD_NEXT 不同，
+// 该方式不依赖加载顺序：libhcomm 是 libhccl 的 DT_NEEDED，进程内必然已加载，
+// HcclDlopen 返回既有句柄；HcclDlsym(句柄) 固定从 libhcomm.so 自身符号表取旧
+// HcclBarrier。结果用 static 缓存，仅查找一次。该机制统一覆盖：配套部署、
+// 旧 hcomm + 新 hccl、以及版本/芯片不满足新流程的回退。
 HcclResult BarrierFallbackToOldFlow(HcclComm comm, aclrtStream stream)
 {
     using BarrierFn = HcclResult (*)(HcclComm, aclrtStream);
-    static BarrierFn oldBarrier = reinterpret_cast<BarrierFn>(HcclDlsym(RTLD_NEXT, "HcclBarrier"));
-    if (oldBarrier != nullptr && oldBarrier != &HcclBarrier) { // 防自递归
+    static BarrierFn oldBarrier = []() -> BarrierFn {
+        void* hcommHandle = HcclDlopen("libhcomm.so", RTLD_NOW);
+        if (hcommHandle == nullptr) {
+            return nullptr;
+        }
+        return reinterpret_cast<BarrierFn>(HcclDlsym(hcommHandle, "HcclBarrier"));
+    }();
+    if (oldBarrier != nullptr) { // 取到的是 libhcomm.so 内的旧实现，不会递归到本分发器
         return oldBarrier(comm, stream);
     }
-    HCCL_ERROR("[Barrier] cannot locate legacy HcclBarrier via RTLD_NEXT; "
-               "ensure libhcomm is loaded after libhccl");
+    HCCL_ERROR("[Barrier] cannot locate legacy HcclBarrier in libhcomm.so");
     return HCCL_E_NOT_SUPPORT;
 }
 } // namespace
