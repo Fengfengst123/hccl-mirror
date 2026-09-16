@@ -11,6 +11,7 @@
 #include "ins_temp_reduce_scatter_nhr.h"
 
 namespace ops_hccl {
+constexpr int TASK_NUM_EXTRA_OVERHEAD = 8;
 
 std::vector<CostModelParam> InsTempReduceScatterNHR::CalcCostCoeff(CalcCostCoeffParam param)
 {
@@ -24,7 +25,7 @@ std::vector<CostModelParam> InsTempReduceScatterNHR::CalcCostCoeff(CalcCostCoeff
     int taskNum = CostModelManager::CalcTransTaskNum((log2(param.rankSize) + 1)) * 1.5
                   + CostModelManager::CalcSyncTaskNum((log2(param.rankSize) + 1)) * 2;
     taskNum = (isSingleChannelNHR || !param.isPod) ? taskNum : taskNum * 2;
-    taskNum = taskNum + 8;
+    taskNum = taskNum + TASK_NUM_EXTRA_OVERHEAD;
     // 单通道SoleNHR的展开/同步开销随NHR步数(log2(N))增长: 按64P(6步,小数据量实测平台~117-179us)/
     // 32P(5步,~119us)标定 taskNum=30*log2(N)-20, 且需满足选择约束: 64P D>=160>CCU算法143(8M),
     // 32P D>=130>CCU算法123(8M), 防止小数据量被错选; 多通道(Parallel两段)不变

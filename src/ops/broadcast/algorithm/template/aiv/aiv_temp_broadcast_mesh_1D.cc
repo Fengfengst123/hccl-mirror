@@ -13,6 +13,7 @@
 #include "config_log.h"
 
 namespace ops_hccl {
+constexpr u32 TWO_PHASE_DATA_FACTOR = 2;
 
 std::vector<CostModelParam> AivTempBroadcastMesh1D::CalcCostCoeff(CalcCostCoeffParam param)
 {
@@ -51,7 +52,8 @@ std::vector<CostModelParam> AivTempBroadcastMesh1D::CalcCostCoeff(CalcCostCoeffP
         A = std::max(A_mesh, A_clos);
     } else {
         CostModelManager::Global()->CalcMeshParam(
-            param.dataRatio * 2 / param.rankSize, param.netType, portNum, param.rankSize, A, isPodForCost);
+            param.dataRatio * TWO_PHASE_DATA_FACTOR / param.rankSize, param.netType, portNum, param.rankSize, A,
+            isPodForCost);
     }
     A *= 0.8;
 

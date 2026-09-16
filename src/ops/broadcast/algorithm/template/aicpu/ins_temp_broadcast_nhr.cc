@@ -13,6 +13,8 @@
 #include "channel.h"
 
 namespace ops_hccl {
+constexpr u32 TWO_PHASE_DATA_FACTOR = 2;
+
 std::vector<CostModelParam> InsTempBroadcastNHR::CalcCostCoeff(CalcCostCoeffParam param)
 {
     // NHR递归halving-doubling算法（scatter+allgather两阶段），拓扑/端口由 executor 通过 topomatch v2 传入
@@ -44,7 +46,7 @@ std::vector<CostModelParam> InsTempBroadcastNHR::CalcCostCoeff(CalcCostCoeffPara
     // pod上下行收敛比2：<=64p实测带宽未收敛，不折半端口；>64p（如128p）实测带宽已收敛，按真实isPod折半
     bool isPodForCost = param.rankSize > 64 && param.isPod;
     CostModelManager::Global()->CalcNHRParams(
-        param.dataRatio * 2 / param.rankSize, netType, portNum, param.rankSize, A, isPodForCost);
+        param.dataRatio * TWO_PHASE_DATA_FACTOR / param.rankSize, netType, portNum, param.rankSize, A, isPodForCost);
     if (param.inputBuffer != param.scratchBuffer) {
         // 原selector: CalcLocalCopyParams(param.n) 即全量数据的本地拷贝（root拷入、非root拷出，平均1份全量）
         CostModelManager::Global()->CalcLocalCopyParams(param.dataRatio, EngineType::AICPU, B);

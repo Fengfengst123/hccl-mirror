@@ -11,6 +11,8 @@
 #include "aicpu/ins_temp_broadcast_mesh_1D_two_shot.h"
 
 namespace ops_hccl {
+constexpr u32 TWO_PHASE_DATA_FACTOR = 2;
+
 std::vector<CostModelParam> InsTempBroadcastMesh1DTwoShot::CalcCostCoeff(CalcCostCoeffParam param)
 {
     // Mesh 算法走 CLOS 时取 portNum[0]（单通道语义，不求和）；MESH 分支 portNum 不参与公式
@@ -30,7 +32,8 @@ std::vector<CostModelParam> InsTempBroadcastMesh1DTwoShot::CalcCostCoeff(CalcCos
     // pod上下行收敛比2：<=64p实测带宽未收敛，不折半端口；>64p（如128p）实测带宽已收敛，按真实isPod折半
     bool isPodForCost = param.rankSize > 64 && param.isPod;
     CostModelManager::Global()->CalcMeshParam(
-        param.dataRatio * 2 / param.rankSize, param.netType, portNum, param.rankSize, A, isPodForCost);
+        param.dataRatio * TWO_PHASE_DATA_FACTOR / param.rankSize, param.netType, portNum, param.rankSize, A,
+        isPodForCost);
     if (param.inputBuffer != param.scratchBuffer) {
         // 原selector: CalcLocalCopyParams(param.n) 即全量数据的本地拷贝（root拷入、非root拷出，平均1份全量）
         CostModelManager::Global()->CalcLocalCopyParams(param.dataRatio, EngineType::AICPU, B);
