@@ -1,8 +1,10 @@
 # 源码构建
 
+本文介绍HCCL源码构建、安装与测试。环境准备可选择[Docker部署](#场景一使用docker部署)或[宿主机部署](#场景二在宿主机部署)。
+
 ## 环境准备
 
-本项目支持源码构建，编译运行前需参考以下步骤完成基础环境搭建和源码下载，确保已安装NPU驱动、固件和CANN软件。
+本项目支持源码构建，编译前需参考以下步骤完成基础环境搭建和源码下载，并安装CANN Toolkit开发套件包。NPU驱动、固件和CANN ops算子包为运行态依赖，若仅编译本项目源码，可以不安装；运行或上板测试前需完成安装。
 
 ### 前置依赖
 
@@ -15,7 +17,80 @@
 - ccache（可选，用于提高二次编译速度）
 - googletest（仅执行UT时依赖，建议版本release-1.14.0）
 
-### 安装CANN软件包
+### 场景一：使用Docker部署
+
+**1. 安装驱动和固件**：在宿主机安装Docker，并参考[CANN软件安装指南](https://www.hiascend.com/document/redirect/CannCommunityInstWizard)安装配套驱动和固件。
+
+**2. 下载构建镜像**：以下以A3镜像为例，按宿主机CPU架构选择一条命令执行。
+
+```bash
+# x86_64
+docker pull --platform=amd64 swr.cn-south-1.myhuaweicloud.com/ascendhub/cann:9.0.1-a3-ubuntu22.04-py3.12-devel
+# aarch64
+docker pull --platform=arm64 swr.cn-south-1.myhuaweicloud.com/ascendhub/cann:9.0.1-a3-ubuntu22.04-py3.12-devel
+```
+
+镜像内已预装构建工具及CANN软件，默认以root用户进入。其他产品和版本请在[Ascend-CANN镜像](https://www.hiascend.com/developer/ascendhub/detail/17da20d1c2b6493cb38765adeba85884)中选择，镜像版本须与源码分支、驱动和固件配套。开发master版本或更换CANN版本时，可参照[安装CANN软件包](#安装cann软件包)在容器内更新CANN。
+
+**3. 创建并进入容器**：以下假设使用`/dev/davinci0`和`/dev/davinci1`，驱动安装在`/usr/local/Ascend`。
+
+```bash
+image=swr.cn-south-1.myhuaweicloud.com/ascendhub/cann:9.0.1-a3-ubuntu22.04-py3.12-devel
+docker run --name env_for_hccl_build --network host \
+  --device /dev/davinci0 \
+  --device /dev/davinci1 \
+  --device /dev/davinci_manager \
+  --device /dev/devmm_svm \
+  --device /dev/hisi_hdc \
+  -v /usr/local/dcmi:/usr/local/dcmi \
+  -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
+  -v /usr/bin/hccn_tool:/usr/bin/hccn_tool \
+  -v /usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64 \
+  -v /usr/local/Ascend/driver/tools:/usr/local/Ascend/driver/tools \
+  -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
+  -v /etc/ascend_install.info:/etc/ascend_install.info \
+  -it "${image}" bash
+```
+
+设备号和挂载路径请按实际环境调整。仅编译时，可省略设备及驱动相关挂载；上板测试时须保留。更多选项可通过`docker run --help`查询。
+
+#### A5（Atlas 950）环境容器配置
+
+A5使用配套镜像，并挂载`/dev/ummu`、`/dev/uburma`和驱动`topo`目录，以支持拓扑发现与UB通信；无需挂载`/dev/devmm_svm`。以下仍以两个Device为例：
+
+```bash
+image=swr.cn-south-1.myhuaweicloud.com/ascendhub/cann:9.1.0-950-openeuler24.03-py3.12
+docker run --name env_for_hccl_build_a5 --network host \
+  --device /dev/davinci0 \
+  --device /dev/davinci1 \
+  --device /dev/davinci_manager \
+  --device /dev/hisi_hdc \
+  --device /dev/ummu \
+  --device /dev/uburma \
+  -v /usr/local/dcmi:/usr/local/dcmi \
+  -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
+  -v /usr/bin/hccn_tool:/usr/bin/hccn_tool \
+  -v /usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64 \
+  -v /usr/local/Ascend/driver/tools:/usr/local/Ascend/driver/tools \
+  -v /usr/local/Ascend/driver/topo:/usr/local/Ascend/driver/topo \
+  -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
+  -v /etc/ascend_install.info:/etc/ascend_install.info \
+  -it "${image}" bash
+```
+
+#### 容器内编译与测试
+
+进入容器后加载CANN环境变量，脚本路径以所选镜像实际安装位置为准：
+
+```bash
+source /usr/local/Ascend/ascend-toolkit/set_env.sh
+```
+
+随后按[编译安装](#编译安装)和[测试](#测试)执行。使用HCCL Test前，需按配套[工具指南](https://www.hiascend.com/document/redirect/CannCommunityToolHcclTest)在容器内准备MPI并编译工具；测试设备须与容器映射一致。直接测试镜像自带HCCL时，无需重新构建HCCL或关闭验签。
+
+### 场景二：在宿主机部署
+
+#### 安装CANN软件包
 
 1. **安装驱动与固件（运行态依赖）**
 
@@ -56,7 +131,7 @@
 
         请访问[CANN官网下载中心](https://www.hiascend.com/cann/download)，选择发布版本（仅支持CANN 8.5.0及后续版本），并根据产品型号和环境架构下载对应软件包，最后参考网页提供的命令完成安装。
 
-### 环境验证
+#### 环境验证
 
 安装完CANN软件包后，需验证环境是否正常。
 
@@ -76,7 +151,7 @@
     cat /usr/local/Ascend/cann/<arch>-linux/ascend_ops_install.info
    ```
 
-### 环境变量配置
+#### 环境变量配置
 
 按需选择合适的命令使环境变量生效。
 
@@ -161,7 +236,7 @@ bash build.sh --ut
 
 1. 工具编译
 
-   使用HCCL Test工具前需要安装MPI依赖、编译HCCL Test工具，详细操作方法可参见配套版本的[昇腾文档中心-HCCL性能测试工具使用指南](https://hiascend.com/document/redirect/CannCommunityToolHcclTest)中的“MPI安装与配置”与“工具编译”章节。
+   使用HCCL Test工具前需要安装MPI依赖、编译HCCL Test工具，详细操作方法可参见配套版本的[昇腾文档中心-HCCL性能测试工具使用指南](https://www.hiascend.com/document/redirect/CannCommunityToolHcclTest)中的“MPI安装与配置”与“工具编译”章节。
 
 2. 关闭验签
 
@@ -190,7 +265,7 @@ bash build.sh --ut
    mpirun -n 8 ./bin/all_reduce_test -b 8K -e 64M -f 2 -d fp32 -o sum -p 8
    ```
 
-   工具的详细使用说明可参见[昇腾文档中心-HCCL 性能测试工具使用指南](https://hiascend.com/document/redirect/CannCommunityToolHcclTest)中的“工具执行”章节。
+   工具的详细使用说明可参见[昇腾文档中心-HCCL 性能测试工具使用指南](https://www.hiascend.com/document/redirect/CannCommunityToolHcclTest)中的“工具执行”章节。
 
 4. 查看结果
 
@@ -198,10 +273,10 @@ bash build.sh --ut
 
    ![hccltest_result](./figures/hccl_test_result.png)
 
-   - “check_result”为success，代表通信算子执行结果成功，AllReduce算子功能正确。
-   - ”aveg_time“：集合通信算子的执行耗时，单位us。
-   - ”alg_bandwidth“：集合通信算子执行带宽，单位为GB/s。
-   - ”data_size“：单个NPU上参与集合通信的数据量，单位为Bytes。
+   - “check_result”为success，代表通信算子执行成功，AllReduce算子功能正确。
+   - “aveg_time”：集合通信算子的执行耗时，单位为us。
+   - “alg_bandwidth”：集合通信算子执行带宽，单位为GB/s。
+   - “data_size”：单个NPU上参与集合通信的数据量，单位为Bytes。
 
 ## 附录
 

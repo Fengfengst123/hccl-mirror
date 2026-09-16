@@ -1,8 +1,10 @@
 # Source Code Build
 
+This document describes how to build, install, and test HCCL from source. Prepare the environment using [Docker](#scenario-1-deploying-with-docker) or [the host](#scenario-2-deploying-on-the-host).
+
 ## Environment Preparation
 
-This project supports building from source. Before compiling and running, set up the basic environment and download the source code by following the steps below. Ensure that the NPU driver, firmware, and CANN software are installed.
+This project supports building from source. Before compiling, set up the basic environment, download the source code, and install the CANN Toolkit package by following the steps below. The NPU driver, firmware, and CANN ops package are runtime dependencies: you can omit them when only compiling the source code, but must install them before running HCCL or testing on hardware.
 
 ### Prerequisites
 
@@ -15,7 +17,80 @@ The following software dependencies are required for compiling this project. Ens
 - ccache (optional, used to improve secondary compilation speed)
 - googletest (required only when running UT, recommended version release-1.14.0)
 
-### Installing the CANN Software Package
+### Scenario 1: Deploying with Docker
+
+**1. Install the driver and firmware**: Install Docker on the host and follow the [CANN Software Installation Guide](https://www.hiascend.com/document/redirect/CannCommunityInstWizard) to install a compatible driver and firmware.
+
+**2. Download a build image**: The following examples use an A3 image. Run one command according to the host CPU architecture.
+
+```bash
+# x86_64
+docker pull --platform=amd64 swr.cn-south-1.myhuaweicloud.com/ascendhub/cann:9.0.1-a3-ubuntu22.04-py3.12-devel
+# aarch64
+docker pull --platform=arm64 swr.cn-south-1.myhuaweicloud.com/ascendhub/cann:9.0.1-a3-ubuntu22.04-py3.12-devel
+```
+
+The image includes build tools and CANN software and uses root by default. For other products and versions, select an [Ascend-CANN image](https://www.hiascend.com/developer/ascendhub/detail/17da20d1c2b6493cb38765adeba85884) compatible with the source branch, driver, and firmware. When developing on master or changing CANN versions, follow [Installing the CANN Software Package](#installing-the-cann-software-package) to update CANN inside the container.
+
+**3. Create and enter the container**: This example uses `/dev/davinci0` and `/dev/davinci1`, with the driver installed under `/usr/local/Ascend`.
+
+```bash
+image=swr.cn-south-1.myhuaweicloud.com/ascendhub/cann:9.0.1-a3-ubuntu22.04-py3.12-devel
+docker run --name env_for_hccl_build --network host \
+  --device /dev/davinci0 \
+  --device /dev/davinci1 \
+  --device /dev/davinci_manager \
+  --device /dev/devmm_svm \
+  --device /dev/hisi_hdc \
+  -v /usr/local/dcmi:/usr/local/dcmi \
+  -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
+  -v /usr/bin/hccn_tool:/usr/bin/hccn_tool \
+  -v /usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64 \
+  -v /usr/local/Ascend/driver/tools:/usr/local/Ascend/driver/tools \
+  -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
+  -v /etc/ascend_install.info:/etc/ascend_install.info \
+  -it "${image}" bash
+```
+
+Adjust device IDs and mount paths to your environment. Device and driver mounts can be omitted for compilation only, but are required for on-device tests. Run `docker run --help` for more options.
+
+#### A5 (Atlas 950) Container Configuration
+
+For A5, use a compatible image and mount `/dev/ummu`, `/dev/uburma`, and the driver's `topo` directory for topology discovery and UB communication. Do not mount `/dev/devmm_svm`. This example also uses two Devices:
+
+```bash
+image=swr.cn-south-1.myhuaweicloud.com/ascendhub/cann:9.1.0-950-openeuler24.03-py3.12
+docker run --name env_for_hccl_build_a5 --network host \
+  --device /dev/davinci0 \
+  --device /dev/davinci1 \
+  --device /dev/davinci_manager \
+  --device /dev/hisi_hdc \
+  --device /dev/ummu \
+  --device /dev/uburma \
+  -v /usr/local/dcmi:/usr/local/dcmi \
+  -v /usr/local/bin/npu-smi:/usr/local/bin/npu-smi \
+  -v /usr/bin/hccn_tool:/usr/bin/hccn_tool \
+  -v /usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64 \
+  -v /usr/local/Ascend/driver/tools:/usr/local/Ascend/driver/tools \
+  -v /usr/local/Ascend/driver/topo:/usr/local/Ascend/driver/topo \
+  -v /usr/local/Ascend/driver/version.info:/usr/local/Ascend/driver/version.info \
+  -v /etc/ascend_install.info:/etc/ascend_install.info \
+  -it "${image}" bash
+```
+
+#### Building and Testing in the Container
+
+After entering the container, set the CANN environment variables. Use the script path for the actual installation in the selected image:
+
+```bash
+source /usr/local/Ascend/ascend-toolkit/set_env.sh
+```
+
+Continue with [Compilation and Installation](#compilation-and-installation) and [Testing](#testing). Before using HCCL Test, prepare MPI and compile the tool inside the container according to the matching [tool guide](https://www.hiascend.com/document/redirect/CannCommunityToolHcclTest). Test devices must match the container mappings. Testing the image's bundled HCCL does not require rebuilding HCCL or disabling signature verification.
+
+### Scenario 2: Deploying on the Host
+
+#### Installing the CANN Software Package
 
 1. **Install the driver and firmware (runtime dependency)**
 
@@ -56,7 +131,7 @@ The following software dependencies are required for compiling this project. Ens
 
      Visit the [CANN official download center](https://www.hiascend.com/cann/download), select a released version (only CANN 8.5.0 and later versions are supported), download the corresponding software package based on the product model and environment architecture, and follow the commands provided on the webpage to complete the installation.
 
-### Environment Verification
+#### Environment Verification
 
 After installing the CANN software package, verify that the environment is functioning correctly.
 
@@ -76,7 +151,7 @@ After installing the CANN software package, verify that the environment is funct
   cat /usr/local/Ascend/cann/<arch>-linux/ascend_ops_install.info
   ```
 
-### Environment Variable Configuration
+#### Environment Variable Configuration
 
 Run the appropriate command to apply the environment variables.
 
@@ -161,7 +236,7 @@ Developers can use the HCCL Test tool to test collective communication functiona
 
 1. Tool compilation
 
-   Before using the HCCL Test tool, install the MPI dependency and compile the HCCL Test tool. For detailed operations, see the "MPI Installation and Configuration" and "Tool Compilation" chapters in the corresponding version of the [Ascend Documentation Center - HCCL Performance Test Tool Guide](https://hiascend.com/document/redirect/CannCommunityToolHcclTest).
+   Before using the HCCL Test tool, install the MPI dependency and compile the HCCL Test tool. For detailed operations, see the "MPI Installation and Configuration" and "Tool Compilation" chapters in the corresponding version of the [Ascend Documentation Center - HCCL Performance Test Tool Guide](https://www.hiascend.com/document/redirect/CannCommunityToolHcclTest).
 
 2. Disable signature verification
 
@@ -190,7 +265,7 @@ Developers can use the HCCL Test tool to test collective communication functiona
    mpirun -n 8 ./bin/all_reduce_test -b 8K -e 64M -f 2 -d fp32 -o sum -p 8
    ```
 
-   For detailed usage instructions, see the "Tool Execution" chapter in the [Ascend Documentation Center - HCCL Performance Test Tool Guide](https://hiascend.com/document/redirect/CannCommunityToolHcclTest).
+   For detailed usage instructions, see the "Tool Execution" chapter in the [Ascend Documentation Center - HCCL Performance Test Tool Guide](https://www.hiascend.com/document/redirect/CannCommunityToolHcclTest).
 
 4. View the results.
 
