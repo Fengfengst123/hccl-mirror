@@ -355,4 +355,4 @@ The RFC is planned in three phases. Currently in Phase 1:
 ## References
 
 - experimental/ conventions: [experimental/README_en.md](../../../README_en.md)
-- HCCL architecture brief: [docs/zh/architecture/architecture-brief.md](../../../../docs/zh/architecture/architecture-brief.md)
+- HCCL architecture brief (Chinese): [docs/zh/architecture/architecture-brief.md](../../../../docs/zh/architecture/architecture-brief.md)

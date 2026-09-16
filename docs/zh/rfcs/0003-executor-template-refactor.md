@@ -1237,7 +1237,7 @@ set(RE_CORE_SRC
 - **AllReduce TwoShot**：`RS → AG` 组合，多层 AllReduce。
 - **数据量覆盖**：Count 整除和不整除 Rank 数，单 Loop 和多 Loop。
 - **拓扑覆盖**：连续 Rank 和 Stride 型子通信域 Rank。
-- **src 回归**：`bash build.sh -u` 跑 UT，确保 src 既有用例不受影响。recursive\_executor 自身 UT 覆盖 `omnipipe_utils`、`data_ops`、`comm_planner`、`algo_desc` 四组（`test/ut/recursive_executor/`）。
+- **src 回归**：`bash build.sh -u` 跑 UT，确保 src 既有用例不受影响。recursive\_executor自身UT计划覆盖`omnipipe_utils`、`data_ops`、`comm_planner`、`algo_desc`四组（`test/ut/recursive_executor/`）。目前仅交付`algo_desc`组UT，`omnipipe_utils`、`data_ops`、`comm_planner`三组待补齐。
 
 ## 风险评估
 

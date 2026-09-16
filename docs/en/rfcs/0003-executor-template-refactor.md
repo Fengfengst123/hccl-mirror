@@ -282,7 +282,7 @@ classDiagram
         HcclCMDType hcclCmdType
         HcclAlgEngineType engineType
         shared_ptr~TopoMatchBaseV2~ topoMatch
-        AlgAttr algAttrs
+        AlgAttrs algAttrs
         AlgoExecDesc algoExecDesc
         string algName
         + GetExecutor(OpParam&) OpsExecutor
@@ -1237,7 +1237,7 @@ End-to-end algorithm testing covers the following scenarios:
 - **AllReduce TwoShot**: `RS → AG` combination, multi-layer AllReduce.
 - **Data volume coverage**: Count divisible and non-divisible by Rank count, single Loop and multi-Loop.
 - **Topology coverage**: Contiguous Rank and Stride-type sub-communicator Ranks.
-- **src regression**: `bash build.sh -u` runs UT to ensure existing src test cases are unaffected. recursive_executor's own UT covers four groups: `omnipipe_utils`, `data_ops`, `comm_planner`, `algo_desc` (`test/ut/recursive_executor/`). Currently only the `algo_desc` UT group is delivered; the `omnipipe_utils`/`data_ops`/`comm_planner` three groups are to be completed.
+- **src regression**: `bash build.sh -u` runs UT to ensure existing src test cases are unaffected. recursive_executor's own UT is planned to cover four groups: `omnipipe_utils`, `data_ops`, `comm_planner`, `algo_desc` (`test/ut/recursive_executor/`). Currently only the `algo_desc` UT group is delivered; the `omnipipe_utils`/`data_ops`/`comm_planner` three groups are to be completed.
 
 ## Risk Assessment
 

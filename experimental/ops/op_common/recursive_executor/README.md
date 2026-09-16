@@ -352,4 +352,4 @@ RFC 规划分三阶段推进，当前处于第一阶段：
 ## 参考
 
 - experimental/ 约定：[experimental/README.md](../../../README.md)
-- HCCL 架构简介：[docs/zh/architecture/architecture-brief.md](../../../../docs/zh/architecture/architecture-brief.md)
+- HCCL架构简介（中文）：[docs/zh/architecture/architecture-brief.md](../../../../docs/zh/architecture/architecture-brief.md)
