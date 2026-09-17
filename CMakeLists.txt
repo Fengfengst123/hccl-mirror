@@ -182,7 +182,7 @@ elseif(BUILD_OPEN_PROJECT)
 
     # Device 侧编译构建
     if(ENABLE_DEVICE)
-        add_cann_device_project(hccl)
+        add_cann_device_project(hccl EXT_ARGS -D ENABLE_EXPERIMENTAL=${ENABLE_EXPERIMENTAL})
     endif()
 
     set(HCCL_HEAD

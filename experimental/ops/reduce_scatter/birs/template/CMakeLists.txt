@@ -8,10 +8,6 @@
 # See LICENSE in the root of the software repository for the full text of the License.
 # -----------------------------------------------------------------------------------------------------------
 
-if(NOT ENABLE_EXPERIMENTAL)
-    return()
-endif()
-
 set(src_list
     ${CMAKE_CURRENT_SOURCE_DIR}/reduce_scatter_birs_inter.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/reduce_scatter_birs.cc

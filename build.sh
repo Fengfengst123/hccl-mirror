@@ -184,6 +184,14 @@ function build_device(){
     # 设置交叉编译工具链路径，cmake toolchain文件通过环境变量读取
     export TOOLCHAIN_DIR="${ASCEND_CANN_PACKAGE_PATH}/toolkit/toolchain/hcc"
 
+    local DEVICE_ENABLE_EXPERIMENTAL
+    if [ "${ENABLE_EXPERIMENTAL}" == "true" ]; then
+        DEVICE_ENABLE_EXPERIMENTAL="ON"
+        log "Info: build_device with experimental"
+    else
+        DEVICE_ENABLE_EXPERIMENTAL="OFF"
+    fi
+
     # 使用新版 cmake/device/CMakeLists.txt 作为独立入口，与 ExternalProject_Add 传参一致
     cmake -S ${CURRENT_DIR}/cmake/device -B . \
         -DCMAKE_BUILD_TYPE=${BUILD_TYPE:-Release} \
@@ -192,6 +200,7 @@ function build_device(){
         -DASCEND_INSTALL_PATH=${ASCEND_CANN_PACKAGE_PATH} \
         -DBUILD_OPEN_PROJECT=ON \
         -DCANN_3RD_LIB_PATH=${CANN_3RD_LIB_PATH} \
+        -DENABLE_EXPERIMENTAL=${DEVICE_ENABLE_EXPERIMENTAL} \
         -DENABLE_SIGN=${ENABLE_SIGN} \
         -DCUSTOM_SIGN_SCRIPT=${CUSTOM_SIGN_SCRIPT}
     if [ $? -ne 0 ]; then

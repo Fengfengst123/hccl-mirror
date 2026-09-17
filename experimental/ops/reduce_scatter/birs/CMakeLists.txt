@@ -8,10 +8,6 @@
 # See LICENSE in the root of the software repository for the full text of the License.
 # -----------------------------------------------------------------------------------------------------------
 
-if(NOT ENABLE_EXPERIMENTAL)
-    return()
-endif()
-
 add_subdirectory(template)
 
 set(src_list

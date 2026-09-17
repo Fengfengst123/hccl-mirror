@@ -14,6 +14,7 @@ set(PRODUCT_SIDE "device")
 set(HCCL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../" CACHE PATH "Project top directory")
 include(${HCCL_DIR}/cmake/fetch_cann_cmake.cmake)
 project(hccl_device)
+option(ENABLE_EXPERIMENTAL "Enable experimental features" OFF)
 
 # 初始化 CANN 项目配置
 init_cann_project(PREPEND_MODULE_PATH)

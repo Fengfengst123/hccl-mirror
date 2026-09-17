@@ -40,7 +40,13 @@ static HcclAlgorithm MakeAicpuAllGatherSequenceMeshNHRNHRMesh()
     algo.hcclCmdType = HcclCMDType::HCCL_CMD_ALLGATHER;
     algo.engineType = HcclAlgEngineType::COMM_ENGINE_AICPU;
     algo.topoMatch = std::make_shared<TopoMatchFourLevel>();
+#ifndef AICPU_COMPILE
     AlgAttrsRegistry::ParseAlgName("AicpuAllGatherSequenceMeshNHRNHRMesh", algo.algAttrs);
+#else
+    // AICPU 独立核库(scatter_aicpu_kernel.so)不链接 host-only 的 AlgAttrsRegistry,
+    // 直接引用会导致 dlopen 阶段 undefined symbol, 与 REGISTER_ALG_ATTRS 在 AICPU_COMPILE 下置空同理。
+    algo.algAttrs.name = "AicpuAllGatherSequenceMeshNHRNHRMesh";
+#endif
     algo.algoExecDesc = MakeAllGather4LevelAlgoExecDesc();
     algo.algName = "AicpuAllGatherSequenceMeshNHRNHRMesh";
     return algo;
