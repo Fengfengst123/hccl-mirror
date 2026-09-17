@@ -54,10 +54,21 @@ struct TemplateExecDesc {
 
 struct AlgoExecDesc;
 using VariantType = std::variant<TemplateExecDesc, std::shared_ptr<AlgoExecDesc>>;
+
+struct OmniPipeXYdata {
+    u32 steps{0};
+    double scale{0.0};
+    double bandwidthRatio{0.0};
+    u32 xEqRankSize{0};
+    u32 yEqRankSize{0};
+};
+
 struct AlgoExecDesc {
     HcclAlgExecPolicy execPolicy = HcclAlgExecPolicy::SEQUENCE;
     std::vector<VariantType> children;
     std::vector<u32> dataSplitRatio;
+    u32 subCommMask{0};
+    OmniPipeXYdata omniPipeXYdata;
 };
 
 class OpsExecutor;

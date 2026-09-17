@@ -119,3 +119,62 @@ TEST(HcclAlgorithmTest, DumpNoCrash)
     desc.Dump();
     SUCCEED();
 }
+
+// ============ OMNIPIPE Child 类型校验 ============
+
+// OMNIPIPE 挂叶子 → 合法
+TEST(HcclAlgorithmTest, OmnipipeLeafChildrenAccepted)
+{
+    HcclAlgorithm desc;
+    desc.algName = "OmniLeafAlgo";
+    desc.algoExecDesc.execPolicy = HcclAlgExecPolicy::OMNIPIPE;
+    TemplateExecDesc tpl;
+    tpl.templateDesc.hcclCmdType = HcclCMDType::HCCL_CMD_ALLGATHER;
+    desc.algoExecDesc.children.emplace_back(tpl);
+    desc.algoExecDesc.children.emplace_back(tpl);
+    desc.algoExecDesc.dataSplitRatio = {1, 1};
+
+    HcclResult ret = AlgSelector::Instance().Register("OmniLeafAlgo", desc);
+    EXPECT_EQ(ret, HCCL_SUCCESS);
+}
+
+// OMNIPIPE 挂 SEQUENCE 子树 → 拒绝
+TEST(HcclAlgorithmTest, OmnipipeSequenceSubtreeRejected)
+{
+    auto subtree = std::make_shared<AlgoExecDesc>();
+    subtree->execPolicy = HcclAlgExecPolicy::SEQUENCE;
+    TemplateExecDesc tpl;
+    subtree->children.emplace_back(tpl);
+    subtree->children.emplace_back(tpl);
+
+    HcclAlgorithm desc;
+    desc.algName = "OmniSeqBadAlgo";
+    desc.algoExecDesc.execPolicy = HcclAlgExecPolicy::OMNIPIPE;
+    desc.algoExecDesc.children.emplace_back(subtree);
+    desc.algoExecDesc.children.emplace_back(subtree);
+    desc.algoExecDesc.dataSplitRatio = {1, 1};
+
+    HcclResult ret = AlgSelector::Instance().Register("OmniSeqBadAlgo", desc);
+    EXPECT_EQ(ret, HCCL_E_PARA);
+}
+
+// OMNIPIPE 挂 OMNIPIPE 子树 → 合法
+TEST(HcclAlgorithmTest, OmnipipeOmnipipeSubtreeAccepted)
+{
+    auto subtree = std::make_shared<AlgoExecDesc>();
+    subtree->execPolicy = HcclAlgExecPolicy::OMNIPIPE;
+    TemplateExecDesc tpl;
+    subtree->children.emplace_back(tpl);
+    subtree->children.emplace_back(tpl);
+    subtree->dataSplitRatio = {1, 1};
+
+    HcclAlgorithm desc;
+    desc.algName = "OmniNestedAlgo";
+    desc.algoExecDesc.execPolicy = HcclAlgExecPolicy::OMNIPIPE;
+    desc.algoExecDesc.children.emplace_back(subtree);
+    desc.algoExecDesc.children.emplace_back(tpl); // 另一轴用叶子
+    desc.algoExecDesc.dataSplitRatio = {1, 1};
+
+    HcclResult ret = AlgSelector::Instance().Register("OmniNestedAlgo", desc);
+    EXPECT_EQ(ret, HCCL_SUCCESS);
+}

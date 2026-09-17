@@ -21,6 +21,7 @@
 #include "template/base_template.h"
 #include "template/template_factory.h"
 #include "template/data_ops.h"
+#include "omnipipe_utils.h"
 
 namespace ops_hccl {
 
@@ -53,13 +54,6 @@ struct AlgoExecDataDesc {
     BufferType outputBufferType{BufferType::OUTPUT};
     BufferType cclBufferType{BufferType::HCCL_BUFFER};
 };
-struct OmniPipeXYdata {
-    u32 steps;
-    double scale;
-    double bandwidthRatio;
-    u32 xEqRankSize;
-    u32 yEqRankSize;
-};
 class OpsExecutor {
 public:
     OpsExecutor(HcclAlgorithm& algo, const OpParam& param);
@@ -90,7 +84,6 @@ private:
     HcclResult OrchestrateOmniPipeLoop(AlgoExecDesc& algoExecDesc, AlgoExecDataDesc& algoExecDataDesc);
     HcclResult GenTemplateDataParams(
         AlgoExecDataDesc& algoExecDataDesc, DataParams& templateDataParams, u32 overrideRoot = INVALID_VALUE_RANKID);
-    void UpdateSubCommMaskMap(AlgoExecDesc& algoExecDesc, const u32 subCommMask);
     HcclResult PreSyncBySubCommMask(const AlgoExecDesc& execDesc);
     HcclResult PostSyncBySubCommMask(const AlgoExecDesc& execDesc);
     void InitAlgoExecDataDesc(
@@ -115,8 +108,8 @@ private:
         u64& lastTailCount);
     std::vector<std::map<u32, std::vector<ChannelInfo>>> RestoreChannelMap(const AlgResourceCtxSerializable& resCtx);
     u64 GetMaxProcCntPerLoop(u64 dataCount);
-    HcclResult OmniPipeUpdateEqBWAndReorder(VariantType& algoExecDesc, u32& eqRankSize, double& eqBw);
-    HcclResult OmniPipeReorderChildren(VariantType& algoExecDesc, u32& eqRankSize, double& eqBw);
+    HcclResult OmniPipeUpdateEqBWAndReorder(AlgoExecDesc& algoExecDesc, u32& eqRankSize, double& eqBw);
+    HcclResult OmniPipeCalcChildEqBW(VariantType& child, u32& eqRankSize, double& eqBw);
     HcclResult OmniPipeCalcExecData(
         AlgoExecDesc& algoExecDesc, AlgoExecDataDesc& algoExecDataDesc, OmniPipeXYdata& omniPipeXYdata,
         std::vector<std::vector<AlgoExecDataDesc>>& childrenExecDataDesc);
@@ -126,6 +119,18 @@ private:
     HcclResult CalcPeerAxisRanksForOutput(
         const AlgoExecDesc& algoExecDesc, u32 peerChildrenId, std::vector<u32> ranksForInput,
         std::vector<u32>& detaRanksForOutput);
+    inline HcclResult GetSubCommRanks(int subCommIndex, std::vector<u32>& ranks) const
+    {
+        if (subCommIndex < 0 || static_cast<size_t>(subCommIndex) >= algHierarchyInfo_.infos.size()
+            || algHierarchyInfo_.infos[subCommIndex].empty()) {
+            HCCL_ERROR(
+                "[GetSubCommRanks] subCommIndex=%d out of range (topoLevelNum=%zu) or empty", subCommIndex,
+                algHierarchyInfo_.infos.size());
+            return HCCL_E_PARA;
+        }
+        ranks = algHierarchyInfo_.infos[subCommIndex].at(0);
+        return HCCL_SUCCESS;
+    }
     HcclAlgorithm algo_;
     u32 myRank_ = INVALID_VALUE_RANKID;
     u32 rankSize_ = 0;
@@ -145,8 +150,9 @@ private:
     std::vector<u32> maxSlaveThreadNum_;
     std::vector<u32> maxNotifyNumOnMainThread_;
     std::vector<u32> maxNotifyNumPerThread_;
-    std::map<const AlgoExecDesc*, u32> execDescSubCommMaskMap_;
-    std::map<const AlgoExecDesc*, OmniPipeXYdata> omniPipeXYdataMap_;
+    std::vector<u32> calcResMaxCh_;
+    std::vector<std::vector<u32>> cachedTemplateRanks_;
+    std::vector<TemplateResource> cachedTemplateResources_;
 };
 } // namespace ops_hccl
 #endif // OPS_EXECUTOR_H

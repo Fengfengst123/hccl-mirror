@@ -19,6 +19,7 @@ set(RE_CORE_SRC
     topo/topo_match_four_level.cc
     executor/adaptor_executor.cc
     executor/ops_executor.cc
+    executor/omnipipe_utils.cc
     template/aicpu/aicpu_base_template.cc
     template/aicpu/allgather_mesh_template.cc
     template/aicpu/allgather_nhr_template.cc

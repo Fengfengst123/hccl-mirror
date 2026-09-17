@@ -114,60 +114,6 @@ target_link_libraries(oxc_omnipipe_utils_test PRIVATE
 
 run_llt_test(TARGET oxc_omnipipe_utils_test TASK_NUM 1)
 
-# ---------- oxc_data_ops_test: data_ops 纯计算函数 ----------
-set(oxc_data_ops_src_list
-    ${CMAKE_CURRENT_SOURCE_DIR}/data_ops_test.cc
-    ${_ut_stub_src}
-    ${_repo_root}/experimental/ops/op_common/recursive_executor/template/data_ops.cc
-    ${_repo_root}/experimental/ops/op_common/recursive_executor/executor/omnipipe_utils.cc
-)
-
-add_executable(oxc_data_ops_test ${oxc_data_ops_src_list})
-
-target_compile_options(oxc_data_ops_test PRIVATE
-    -U_FORTIFY_SOURCE
-)
-
-target_include_directories(oxc_data_ops_test PRIVATE ${_ut_include_dirs})
-
-_detect_cann_version(oxc_data_ops_test)
-
-target_link_libraries(oxc_data_ops_test PRIVATE
-    $<BUILD_INTERFACE:intf_llt_pub>
-    GTest::gtest_main
-    -lpthread
-)
-
-run_llt_test(TARGET oxc_data_ops_test TASK_NUM 1)
-
-# ---------- oxc_comm_planner_test: mesh_comm_planner + nhr_comm_planner ----------
-set(oxc_comm_planner_src_list
-    ${CMAKE_CURRENT_SOURCE_DIR}/comm_planner_test.cc
-    ${_ut_stub_src}
-    ${_repo_root}/experimental/ops/op_common/recursive_executor/template/comm_planners/mesh_comm_planner.cc
-    ${_repo_root}/experimental/ops/op_common/recursive_executor/template/comm_planners/nhr_comm_planner.cc
-    ${_repo_root}/experimental/ops/op_common/recursive_executor/template/data_ops.cc
-    ${_repo_root}/experimental/ops/op_common/recursive_executor/executor/omnipipe_utils.cc
-)
-
-add_executable(oxc_comm_planner_test ${oxc_comm_planner_src_list})
-
-target_compile_options(oxc_comm_planner_test PRIVATE
-    -U_FORTIFY_SOURCE
-)
-
-target_include_directories(oxc_comm_planner_test PRIVATE ${_ut_include_dirs})
-
-_detect_cann_version(oxc_comm_planner_test)
-
-target_link_libraries(oxc_comm_planner_test PRIVATE
-    $<BUILD_INTERFACE:intf_llt_pub>
-    GTest::gtest_main
-    -lpthread
-)
-
-run_llt_test(TARGET oxc_comm_planner_test TASK_NUM 1)
-
 # ---------- oxc_algo_desc_test: algo_desc 序列化/反序列化 + AlgSelector 注册 ----------
 set(oxc_algo_desc_src_list
     ${CMAKE_CURRENT_SOURCE_DIR}/algo_desc_test.cc

@@ -707,18 +707,18 @@ PreCopy(Input → CCL) → OrchestrateOmniPipeLoop → PostCopy(CCL → Output)
 
 Where `PreCopy` copies this Rank's Input into CCL Buffer with `ranksForInputData = {myRank_}`, then sets `inputBufferType`/`outputBufferType` to `HCCL_BUFFER`; after orchestration, `PostCopy` writes the full result back to Output with `ranksForOutputData = [0..rankSize-1]`.
 
-The `InitRes` stage first calls `OmniPipeUpdateEqBWAndReorder` for a **topology preprocessing pass**, with results cached by `AlgoExecDesc*` in `omniPipeXYdataMap_` for subsequent `OrchestrateOmniPipeLoop` queries:
+The `InitRes` stage first calls `OmniPipeUpdateEqBWAndReorder` for a **topology preprocessing pass**, with results stored inline in `AlgoExecDesc` (`omniPipeXYdata` field in `algo_desc.h`) for subsequent `OrchestrateOmniPipeLoop` queries:
 
-1. **Per-axis equivalent bandwidth**: Recursively compute each axis subtree's equivalent bandwidth—Mesh layer `OMIN_MESH_BW=56`, CLOS layer `OMIN_CLOS_BW/(eqRankSize-1)` (`OMIN_CLOS_BW=112`).
+1. **Per-axis equivalent bandwidth**: Recursively compute each axis subtree's equivalent bandwidth—Mesh layer `OMNI_MESH_BW=56`, CLOS layer `OMNI_CLOS_BW/(eqRankSize-1)` (`OMNI_CLOS_BW=112`).
 2. **Axis reordering**: If X-axis equivalent bandwidth is greater than Y-axis, swap the two Children to ensure the slow axis comes first (`xEqBw ≤ yEqBw`).
-3. **Step/ratio computation**: Use `CalcBandwidth2D(xB, yB, xRankSize, yRankSize, OMIN_MAX_STEP_NUM, steps, scale)` to compute pipeline step count `steps` (≤ 5) and `scale` scaling by bandwidth ratio, stored together with `bandwidthRatio = yB/xB`, `xEqRankSize/yEqRankSize` in `OmniPipeXYdata`.
+3. **Step/ratio computation**: Use `CalcBandwidth2D(xB, yB, xRankSize, yRankSize, OMNI_MAX_STEP_NUM, steps, scale)` to compute pipeline step count `steps` (≤ 5) and `scale` scaling by bandwidth ratio, stored together with `bandwidthRatio = yB/xB`, `xEqRankSize/yEqRankSize` in `OmniPipeXYdata`.
 
 The orchestration skeleton of `OrchestrateOmniPipeLoop`:
 
 ```mermaid
 flowchart TB
     Start["OrchestrateOmniPipeLoop(desc, dataDesc)"]
-    Get["Query omniPipeXYdataMap_[desc]<br/>get steps/scale/bandwidthRatio/xEqRankSize/yEqRankSize"]
+    Get["Read desc->omniPipeXYdata<br/>get steps/scale/bandwidthRatio/xEqRankSize/yEqRankSize"]
     Slice["OmniPipeCalcExecData<br/>Generate steps copies of AlgoExecDataDesc for each X/Y axis<br/>(CalcOmniPipeDataSlice step-by-step slicing + fix ranksForInputDataGroup per step)"]
     Loop{"step i < steps?"}
     Pre["PreSyncBySubCommMask"]

@@ -309,13 +309,17 @@ RFC 规划分三阶段推进，当前处于第一阶段：
 
 | 阶段      | 目标                                   | 状态    |
 | ------- | ------------------------------------ | ----- |
-| Phase 1 | 核心框架 + AllGather + AICPU 引擎 + 四级对称拓扑 | 🔨 骨架阶段 |
+| Phase 1 | 核心框架 + AllGather + AICPU 引擎 + 四级对称拓扑 | ✅ 已实现 |
 | Phase 2 | 多算子覆盖 + PARALLEL 策略 + 多引擎（AIV/CCU）   | ⏳ 规划中 |
 | Phase 3 | OMNIPIPE 流水线 + 非对称拓扑 + 生产集成          | ⏳ 规划中 |
 
-### 已实现（骨架）
+### 已实现
 
 - **核心框架**：`AlgoExecDesc` 递归算法树、`OpsExecutor` 通用递归解释器、`DataParams` 统一数据模型
+- **执行策略**：
+  - **SEQUENCE**：子节点串行执行，前序输出 = 后序输入
+  - **PARALLEL**：子节点并行执行，按 `dataSplitRatio` 数据切分，支持前后子通信域同步
+  - **OMNIPIPE**：流水线重叠编排，基于 `OmniPipeXYdata` 计算步数与数据切片，支持二维带宽建模
 - **算法注册**：`AlgSelector` 单例 + `REGISTER_ALG` 宏（宏已定义，尚无实例化调用）
 - **Template 实现**：
   - `AllGatherMeshTemplate`（`template/aicpu/allgather_mesh_template.cc`）— Mesh AllGather，支持 DirectToOutput 模式
@@ -325,12 +329,10 @@ RFC 规划分三阶段推进，当前处于第一阶段：
   - `RunNhrAllGather`（`template/comm_planners/nhr_comm_planner.cc`）— 递归减半算法，`CanReadLastStepToOutput` 末步直写
 - **拓扑匹配**：`TopoMatchFourLevel`（`topo/topo_match_four_level.cc`）— 四级对称拓扑
 - **执行器适配**：`AdaptorExecutor`（`executor/adaptor_executor.cc`）— 桥接 HCCL 框架，`REGISTER_ALG` 宏接入
-- **OmniPipe 工具**：`OmniPipeXYdata` 数据结构已定义（`executor/omnipipe_utils.h`），但尚未接入执行器主流程
+- **OmniPipe 工具**：`OmniPipeXYdata` 数据结构 + 二维带宽建模 + 数据切片计算（`executor/omnipipe_utils.h` / `.cc`），已接入 `OrchestrateOmniPipeLoop` 主流程
 
 ### 未实现 / 规划中
 
-- **OMNIPIPE 策略**：数据结构已定义，编排逻辑未实现
-- **PARALLEL 策略**：接口已定义，数据切分逻辑未实现
 - **多引擎**：仅 AICPU，AIV（AI Core Vector）/ CCU 未实现
 - **多算子**：仅 AllGather，AllReduce / Broadcast / ReduceScatter / AlltoAll 等未实现
 - **非对称拓扑**：仅支持对称四级拓扑
@@ -343,7 +345,7 @@ RFC 规划分三阶段推进，当前处于第一阶段：
 1. **试验性，不编入商用版本**：本模块置于 `experimental/`，默认不参与生产构建，不保证兼容性，API 可能随时变更。
 2. **单一引擎**：仅实现 AICPU 引擎的 Template，不支持 AIV / CCU 引擎。
 3. **单一算子**：仅注册 AllGather 算法，不支持 AllReduce / Broadcast / ReduceScatter / AlltoAll / Send / Recv 等。
-4. **单一执行策略**：SEQUENCE 策略已实现，PARALLEL 和 OMNIPIPE 仅有数据结构定义，编排逻辑未完成。
+4. **执行策略覆盖有限**：SEQUENCE、PARALLEL、OMNIPIPE 三种策略均已实现，但 OMNIPIPE 仅支持 AllReduce/AllGather 算子，且依赖二维带宽建模参数。
 5. **对称拓扑要求**：`TopoMatchFourLevel` 要求四级拓扑对称（各 rank 视角一致），不支持非对称拓扑。
 6. **测试覆盖有限**：框架已具备结构，但 UT / ST 覆盖尚不完整，生产使用前需补充测试。
 

@@ -707,18 +707,18 @@ PreCopy(Input → CCL) → OrchestrateOmniPipeLoop → PostCopy(CCL → Output)
 
 其中 `PreCopy` 以 `ranksForInputData = {myRank_}` 把本 Rank 的 Input 拷贝进 CCL Buffer，随后把 `inputBufferType`/`outputBufferType` 置为 `HCCL_BUFFER`，编排结束后 `PostCopy` 以 `ranksForOutputData = [0..rankSize-1]` 把全量结果写回 Output。
 
-`InitRes` 阶段先调用 `OmniPipeUpdateEqBWAndReorder` 做一次**拓扑预处理**，结果按 `AlgoExecDesc*` 缓存进 `omniPipeXYdataMap_`，供后续 `OrchestrateOmniPipeLoop` 查询：
+`InitRes` 阶段先调用 `OmniPipeUpdateEqBWAndReorder` 做一次**拓扑预处理**，结果随 `AlgoExecDesc` 结构携带（`algo_desc.h` 的 `omniPipeXYdata` 字段），供后续 `OrchestrateOmniPipeLoop` 查询：
 
-1. **逐轴等效带宽**：递归计算每个轴子树的等效带宽——Mesh 层 `OMIN_MESH_BW=56`，CLOS 层 `OMIN_CLOS_BW/(eqRankSize-1)`（`OMIN_CLOS_BW=112`）。
+1. **逐轴等效带宽**：递归计算每个轴子树的等效带宽——Mesh 层 `OMNI_MESH_BW=56`，CLOS 层 `OMNI_CLOS_BW/(eqRankSize-1)`（`OMNI_CLOS_BW=112`）。
 2. **轴重排**：若 X 轴等效带宽大于 Y 轴，则交换两个 Child，保证慢轴在前（`xEqBw ≤ yEqBw`）。
-3. **Step/比例计算**：用 `CalcBandwidth2D(xB, yB, xRankSize, yRankSize, OMIN_MAX_STEP_NUM, steps, scale)` 按带宽比计算流水步数 `steps`（≤ 5）与 `scale` 缩放，连同 `bandwidthRatio = yB/xB`、`xEqRankSize/yEqRankSize` 一起存入 `OmniPipeXYdata`。
+3. **Step/比例计算**：用 `CalcBandwidth2D(xB, yB, xRankSize, yRankSize, OMNI_MAX_STEP_NUM, steps, scale)` 按带宽比计算流水步数 `steps`（≤ 5）与 `scale` 缩放，连同 `bandwidthRatio = yB/xB`、`xEqRankSize/yEqRankSize` 一起存入 `OmniPipeXYdata`。
 
 `OrchestrateOmniPipeLoop` 的编排骨架：
 
 ```mermaid
 flowchart TB
     Start["OrchestrateOmniPipeLoop(desc, dataDesc)"]
-    Get["查询 omniPipeXYdataMap_[desc]<br/>得到 steps/scale/bandwidthRatio/xEqRankSize/yEqRankSize"]
+    Get["从 desc->omniPipeXYdata 获取<br/>steps/scale/bandwidthRatio/xEqRankSize/yEqRankSize"]
     Slice["OmniPipeCalcExecData<br/>为 X/Y 两轴各生成 steps 份 AlgoExecDataDesc<br/>(CalcOmniPipeDataSlice 逐步切分 + 修正逐步 ranksForInputDataGroup)"]
     Loop{"step i < steps?"}
     Pre["PreSyncBySubCommMask"]

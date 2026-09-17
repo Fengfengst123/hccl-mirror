@@ -312,13 +312,17 @@ The RFC is planned in three phases. Currently in Phase 1:
 
 | Phase   | Goal                                                | Status     |
 | -------- | --------------------------------------------------- | ---------- |
-| Phase 1  | Core framework + AllGather + AICPU engine + four-level symmetric topology | 🔨 Skeleton phase |
+| Phase 1  | Core framework + AllGather + AICPU engine + four-level symmetric topology | ✅ Implemented |
 | Phase 2  | Multi-operator coverage + PARALLEL strategy + multi-engine (AIV/CCU) | ⏳ Planned  |
 | Phase 3  | OMNIPIPE pipeline + asymmetric topology + production integration | ⏳ Planned  |
 
-### Implemented (Skeleton)
+### Implemented
 
 - **Core framework**: `AlgoExecDesc` recursive algorithm tree, `OpsExecutor` generic recursive interpreter, `DataParams` unified data model
+- **Execution strategies**:
+  - **SEQUENCE**: Children execute sequentially, prior output = next input
+  - **PARALLEL**: Children execute in parallel, data partitioned by `dataSplitRatio`, with pre/post sub-communicator synchronization
+  - **OMNIPIPE**: Pipeline overlap orchestration, computes step count and data slices based on `OmniPipeXYdata`, supports 2D bandwidth modeling
 - **Algorithm registration**: `AlgSelector` singleton + `REGISTER_ALG` macro (macro defined, no instantiation calls yet)
 - **Template implementations**:
   - `AllGatherMeshTemplate` (`template/aicpu/allgather_mesh_template.cc`) — Mesh AllGather, supports DirectToOutput mode
@@ -328,12 +332,10 @@ The RFC is planned in three phases. Currently in Phase 1:
   - `RunNhrAllGather` (`template/comm_planners/nhr_comm_planner.cc`) — Recursive halving algorithm, `CanReadLastStepToOutput` last-step direct write
 - **Topology matching**: `TopoMatchFourLevel` (`topo/topo_match_four_level.cc`) — four-level symmetric topology
 - **Executor adapter**: `AdaptorExecutor` (`executor/adaptor_executor.cc`) — bridges HCCL framework, `REGISTER_ALG` macro integration
-- **OmniPipe utilities**: `OmniPipeXYdata` data structure defined (`executor/omnipipe_utils.h`), but not yet integrated into the executor main flow
+- **OmniPipe utilities**: `OmniPipeXYdata` data structure + 2D bandwidth modeling + data slice computation (`executor/omnipipe_utils.h` / `.cc`), integrated into `OrchestrateOmniPipeLoop` main flow
 
 ### Not Implemented / Planned
 
-- **OMNIPIPE strategy**: Data structures defined, orchestration logic not implemented
-- **PARALLEL strategy**: Interface defined, data partitioning logic not implemented
 - **Multi-engine**: Only AICPU; AIV (AI Core Vector) / CCU not implemented
 - **Multi-operator**: Only AllGather; AllReduce / Broadcast / ReduceScatter / AlltoAll etc. not implemented
 - **Asymmetric topology**: Only symmetric four-level topology supported
@@ -346,7 +348,7 @@ The RFC is planned in three phases. Currently in Phase 1:
 1. **Experimental, not in production builds**: This module resides under `experimental/`, does not participate in production builds by default, and does not guarantee compatibility. APIs may change at any time.
 2. **Single engine**: Only AICPU engine Templates are implemented; AIV / CCU engines are not supported.
 3. **Single operator**: Only AllGather is registered; AllReduce / Broadcast / ReduceScatter / AlltoAll / Send / Recv etc. are not supported.
-4. **Single execution strategy**: SEQUENCE strategy is implemented; PARALLEL and OMNIPIPE have only data structure definitions, orchestration logic is incomplete.
+4. **Limited execution strategy coverage**: SEQUENCE, PARALLEL, and OMNIPIPE strategies are all implemented, but OMNIPIPE only supports AllReduce/AllGather operators and depends on 2D bandwidth modeling parameters.
 5. **Symmetric topology requirement**: `TopoMatchFourLevel` requires symmetric four-level topology (consistent view across all ranks); asymmetric topology is not supported.
 6. **Limited test coverage**: The framework has structure, but UT / ST coverage is incomplete; tests should be supplemented before production use.
 

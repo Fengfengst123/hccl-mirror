@@ -30,6 +30,7 @@ public:
     void SetNetLayer(int netLayer) { netLayer_ = netLayer; }
     void SetChannelsPerRank(u32 val) { channelsPerRank_ = val; }
     void SetDataSize(u64 size) { dataSize_ = size; }
+    u32 GetChannelsPerRank() const { return channelsPerRank_; }
 
     // 计算 channel/notify/thread 资源请求
     virtual HcclResult CalcRes(HcclComm comm, HcclAlgEngineType engineType, AlgResourceRequest& res)
