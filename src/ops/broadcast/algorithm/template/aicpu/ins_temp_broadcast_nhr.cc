@@ -14,6 +14,7 @@
 
 namespace ops_hccl {
 constexpr u32 TWO_PHASE_DATA_FACTOR = 2;
+constexpr int DEFAULT_PORT_NUM = 8;
 
 std::vector<CostModelParam> InsTempBroadcastNHR::CalcCostCoeff(CalcCostCoeffParam param)
 {
@@ -25,7 +26,7 @@ std::vector<CostModelParam> InsTempBroadcastNHR::CalcCostCoeff(CalcCostCoeffPara
         portNum += static_cast<int>(p);
     }
     if (portNum <= 0) {
-        portNum = 8;
+        portNum = DEFAULT_PORT_NUM;
     }
     // NHR递归halving-doubling每轮通信对象按2的幂折叠，通信轮次与log2(rankSize)相关而非线性，
     // D 用 rEff 替代 rankSize（与 all_gather NHR 一致）
