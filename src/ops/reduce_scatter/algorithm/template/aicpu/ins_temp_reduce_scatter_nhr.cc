@@ -21,16 +21,13 @@ std::vector<CostModelParam> InsTempReduceScatterNHR::CalcCostCoeff(CalcCostCoeff
                       (param.portNum[0] + param.portNum[1]) :
                       param.portNum[0];
 
-    int kernelNum = 17;
+    int kernelNum = 21;
     int taskNum = CostModelManager::CalcTransTaskNum((log2(param.rankSize) + 1)) * 1.5
                   + CostModelManager::CalcSyncTaskNum((log2(param.rankSize) + 1)) * 2;
     taskNum = (isSingleChannelNHR || !param.isPod) ? taskNum : taskNum * 2;
     taskNum = taskNum + TASK_NUM_EXTRA_OVERHEAD;
-    // 单通道SoleNHR的展开/同步开销随NHR步数(log2(N))增长: 按64P(6步,小数据量实测平台~117-179us)/
-    // 32P(5步,~119us)标定 taskNum=30*log2(N)-20, 且需满足选择约束: 64P D>=160>CCU算法143(8M),
-    // 32P D>=130>CCU算法123(8M), 防止小数据量被错选; 多通道(Parallel两段)不变
     if (isSingleChannelNHR) {
-        int floorTaskNum = static_cast<int>(30.0 * log2(static_cast<double>(param.rankSize))) - 20;
+        int floorTaskNum = static_cast<int>(30.0 * log2(static_cast<double>(param.rankSize))) - 26;
         taskNum = (floorTaskNum > taskNum) ? floorTaskNum : taskNum;
     }
     float A = 0.0f;
