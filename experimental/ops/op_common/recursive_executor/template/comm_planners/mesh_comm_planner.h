@@ -19,12 +19,17 @@ namespace ops_hccl {
 
 struct DataParams;
 
-struct MeshSliceInfoV3 {
+struct MeshSliceContext {
     const DataParams& tempAlgParams;
-    u64 sliceSize;
-    u64 tailSize;
-    u64 stride;
-    u32 tailRankId;
+    u64 sliceSize{0};
+    u64 tailSize{0};
+    u64 stride{0};
+    u32 tailRankId{INVALID_VALUE_RANKID};
+    u32 rankSize{0};
+    bool directToOutput{false};
+    std::vector<u32> ranksForInputData;
+
+    explicit MeshSliceContext(const DataParams& params) : tempAlgParams(params) {}
 };
 
 struct MeshSlicePair {

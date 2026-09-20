@@ -16,6 +16,7 @@
 #include "base_template.h"
 #include "alg_param.h"
 #include "data_ops.h"
+#include "data_transfer.h"
 #include "alg_data_trans_wrapper.h"
 
 namespace ops_hccl {
@@ -43,11 +44,33 @@ protected:
         const std::vector<DataSlicesList>& txRxSlicesLists, TemplateResource& templateResource,
         const std::vector<ThreadHandle>& threads);
 
+    // SendAll 定制化 hook：子类覆写以改变传输上下文构建与并行 PostCopy 行为。
+    // parallelPostCopy 由基类 SendAll 通过 CanParallelPostCopy 预算后传入，
+    // 使 BuildTransferContext 能据"是否实际并行"决定末步方向（直写 output 或写 cclBuffer）。
+    virtual TransferContext BuildTransferContext(
+        const DataSlicesList& txRxSlicesList, TemplateResource& templateResource, bool isLastStep,
+        bool parallelPostCopy) const;
+    virtual bool CanParallelPostCopy(const TemplateResource& templateResource) const
+    {
+        (void)templateResource;
+        return false;
+    }
+    virtual HcclResult LaunchPostCopy(const std::vector<ThreadHandle>& threads)
+    {
+        (void)threads;
+        return HCCL_SUCCESS;
+    }
+
     // 单 rank 合并直拷：inputBufferPtr → outputBufferPtr，跳过 cclBuffer 中转
     virtual HcclResult CopyInputToOutput(const std::vector<ThreadHandle>& threads);
 
     // flag: true=NHR 在搬运边界 sync，false=Mesh 在通信段边界 sync
     bool syncAtCopyBoundary_{false};
+
+    // notify 预算分配：每对 main↔sub 线程 2 个 notify
+    // 索引 0 = PreSync（main→sub 通信启动同步），索引 1 = PostCopy（main→sub 搬运启动同步，NHR 并行搬运用）
+    static constexpr u32 NOTIFY_IDX_PRE_SYNC = 0;
+    static constexpr u32 NOTIFY_IDX_POST_COPY = 1;
 
     // 非虚 helper：从线程同步（空线程时安全返回）
     HcclResult PreSyncSubThreads(

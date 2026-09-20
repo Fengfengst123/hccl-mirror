@@ -59,6 +59,8 @@ struct DataParams {
 
     bool enableRemoteMemAccess{false};
 
+    u32 userRankSize{0};
+
     std::vector<u32> ranksForInputData;
 
     char algTag[ALG_TAG_LENGTH] = "";

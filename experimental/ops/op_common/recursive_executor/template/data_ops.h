@@ -13,6 +13,7 @@
 
 #include <vector>
 #include <algorithm>
+#include <limits>
 #include "alg_param.h"
 #include "data_types.h"
 #include "alg_data_trans_wrapper.h"
@@ -23,6 +24,35 @@ inline HcclResult CheckInputDataRanks(const DataParams& tempAlgParams, const cha
 {
     CHK_PRT_RET(
         tempAlgParams.ranksForInputData.empty(), HCCL_ERROR("[%s] ranksForInputData is empty.", tag), HCCL_E_PARA);
+    CHK_PRT_RET(
+        tempAlgParams.dataType >= HcclDataType::HCCL_DATA_TYPE_RESERVED,
+        HCCL_ERROR("[%s] dataType[%d] is invalid.", tag, static_cast<int>(tempAlgParams.dataType)), HCCL_E_PARA);
+    return HCCL_SUCCESS;
+}
+
+// 计算 connectedOffset 后的 input rank 列表（mesh/nhr 公共逻辑）。
+// connectedOffset = connectedRank - myRank，将 ranksForInputData 中每个 rank 平移得到对端 rank。
+// userRankSize 为全局 rank 总数，用于校验映射结果不越界。
+inline HcclResult GetConnectedInputRanks(
+    const std::vector<u32>& ranksForInputData, long long connectedOffset, std::vector<u32>& connectedInputRanks,
+    u32 userRankSize, const char* tag)
+{
+    connectedInputRanks.clear();
+    connectedInputRanks.reserve(ranksForInputData.size());
+    for (u32 rankId : ranksForInputData) {
+        const long long connectedRankId = static_cast<long long>(rankId) + connectedOffset;
+        CHK_PRT_RET(
+            connectedRankId < 0 || connectedRankId >= static_cast<long long>(userRankSize),
+            HCCL_ERROR(
+                "[%s] connectedRankId[%lld] out of range [0, %u), rankId=%u, connectedOffset=%lld, "
+                "ranksForInputData size=%zu.",
+                tag, connectedRankId, userRankSize, rankId, connectedOffset, ranksForInputData.size()),
+            HCCL_E_PARA);
+        HCCL_DEBUG(
+            "[%s] GetConnectedInputRanks: rankId=%u, connectedOffset=%lld, connectedRankId=%lld", tag, rankId,
+            connectedOffset, connectedRankId);
+        connectedInputRanks.emplace_back(static_cast<u32>(connectedRankId));
+    }
     return HCCL_SUCCESS;
 }
 
@@ -53,6 +83,10 @@ HcclResult CalcRanksForOutput(
     const std::vector<u32>& ranksForInputData, const std::vector<u32>& subCommRanks, u32 myRank,
     std::vector<u32>& ranksForOutputData);
 
+// PostCopyData：将 ccl buffer 中的数据搬运到 output buffer。
+// ranksForOutputData：需要搬运的 rank 列表，其循环下标 idx 用作 output 槽位索引（非 rankId），
+//                     即数据写入位置 = dataOffset + sliceOffset + idx * dataStride。
+// skipRanks：需跳过的 rank（已通过其他路径写入 output，如 directToOutput 中 SendAll 直写）。
 HcclResult PostCopyData(
     const DataParams& tempAlgParams, const ThreadHandle& thread, const std::vector<u32>& ranksForOutputData,
     u32 channelIdx = 0, const ChannelSplitInfo& channelSplit = {}, const std::vector<u32>& skipRanks = {});

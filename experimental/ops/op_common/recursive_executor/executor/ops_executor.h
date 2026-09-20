@@ -72,6 +72,9 @@ private:
         HcclComm comm, const TemplateExecDesc& templateExeDes,
         std::vector<std::vector<HcclChannelDesc>>& requestChannels);
     HcclResult GetTemplateRes(const TemplateExecDesc& templateExeDes);
+    // 为模板实例补齐 channelsPerRank_（与 GetTemplateRes 逻辑一致），
+    // 供 GetTemplateRes 和 RunTemplateDesc 共用，避免两处复制
+    HcclResult SetTemplateChannelConfig(BaseTemplate* tpl, int subCommIndex);
     HcclResult OrchestrateLoop(
         AlgoExecDesc& algoExecDesc, AlgoExecDataDesc& algoExecDataDesc,
         std::vector<AlgoExecDataDesc>* reusableChildren = nullptr);

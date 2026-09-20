@@ -17,15 +17,28 @@
 namespace ops_hccl {
 
 struct TransferContext {
-    bool enableRemoteMemAccess = true;
+    // 控制本次传输方向：true 且 buffType 为 OUTPUT 时用 READ（远端读），
+    // 否则用 WRITE。与 DataParams::enableRemoteMemAccess（系统级 OFFLOAD 标志）
+    // 语义不同：此处是逐传输的方向开关，可由各模板按场景无条件置 true（如 Mesh），
+    // 也可从 DataParams::enableRemoteMemAccess 透传（如基类/NHR 非末步）。
+    bool remoteReadEnabled = true;
     BufferType buffType = BufferType::OUTPUT;
     DataSlicesList txRxSlicesList;
-    TemplateResource templateRes;
+    const TemplateResource* templateRes = nullptr;
     HcclDataType dataType = HCCL_DATA_TYPE_RESERVED;
     HcclReduceOp reduceOp = HCCL_REDUCE_RESERVED;
+
+    // NHR 场景下各对端共用同一线程池（threads[channelIdx]），
+    // 而非按 rankPos*channelsPerRank+channelIdx 分配。由调用方按场景设置。
+    bool reuseChannelThreads = false;
 };
 
 HcclResult DataTransferSend(const TransferContext& ctx);
+
+// 按 dstRank 在 channels map 中的顺序位置取线程索引，
+// 若超出 threads 向量范围则回退到线程 0。
+// 提取为独立函数，供 SendAll 预测末步通信线程，用于 LaunchPostCopy 的同步源。
+ThreadHandle GetThreadForDstRank(const TemplateResource& res, u32 dstRank);
 
 } // namespace ops_hccl
 

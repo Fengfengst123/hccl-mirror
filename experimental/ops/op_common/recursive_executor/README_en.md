@@ -27,7 +27,7 @@ The existing HCCL operator implementation has the following structural issues:
 1. **Hard-coded dispatch logic**: The multi-level communication flow for each operator (e.g., AllGather's server→super-pod→cross-super-pod) is hard-coded as sequential code inside the operator. It cannot be reused, and adding a new operator requires rewriting the entire chain.
 2. **Algorithm-execution coupling**: Algorithm selection, data partitioning, and transfer execution are mixed within the same function, making them difficult to test or replace independently.
 3. **High cost of new operators**: Adding a new operator requires understanding the full-chain code and copying large amounts of boilerplate logic, creating a heavy maintenance burden.
-4. **Fragmented multi-level topology support**: Communication planners for different levels (Mesh/NHR/OCS) are scattered across multiple places, lacking unified orchestration.
+4. **Fragmented multi-level topology support**: Communication planners for different levels are scattered across multiple places, lacking unified orchestration.
 5. **Difficult pipeline overlap**: Overlap between data transfer and computation requires hand-written complex state machines at the operator level, which is hard to generalize.
 6. **Poor testability**: Dispatch logic is embedded inside operators, making it impossible to unit-test individual communication levels.
 
@@ -37,10 +37,10 @@ Ascend large-scale training clusters have a naturally four-level network topolog
 
 | Level  | Topology Type      | Description                          |
 | ------ | ------------------ | ------------------------------------ |
-| layer0 | server Mesh        | Intra-server Mesh interconnect        |
-| layer1 | cross-server NHR   | Inter-server Non-Uniform Hierarchical Ring |
-| layer2 | cross-super-pod NHR | Inter-super-pod NHR                 |
-| layer3 | cross-super-pod OCS | OCS dynamic links                    |
+| layer0 | intra-server interconnect | Intra-server node communication        |
+| layer1 | cross-server interconnect | Inter-server node communication        |
+| layer2 | cross-super-pod interconnect | Inter-super-pod node communication |
+| layer3 | cross-super-pod interconnect | Cross-super-pod node communication  |
 
 The current architecture writes independent dispatch code for each topology level, preventing composition. The recursive executor uses a **unified algorithm tree** to describe multi-level topology flows, encapsulating each level's communication as a Template leaf node and automatically combining them through recursive orchestration.
 
@@ -99,7 +99,7 @@ Four-layer separation of concerns:
 ```cpp
 // inc/algo_desc.h
 
-enum HcclAlgExecPolicy {
+enum class HcclAlgExecPolicy {
     SEQUENCE,   // Children execute sequentially, prior output = next input
     PARALLEL,   // Children execute in parallel, data partitioned among them
     OMNIPIPE,   // Pipeline overlap: receive, compute, and send concurrently
@@ -108,17 +108,24 @@ enum HcclAlgExecPolicy {
 // Leaf node: points to a Template execution description
 struct TemplateExecDesc {
     TemplateDesc templateDesc;  // Template identifier + parameters
+    int subCommIndex = 0;       // Sub-communicator index
+    int netLayer = -1;          // Network layer index, -1 = iterate all layers, take first match
 };
 
 // Recursive node: itself is an algorithm tree
+struct AlgoExecDesc;
+using VariantType = std::variant<TemplateExecDesc, std::shared_ptr<AlgoExecDesc>>;
+
 struct AlgoExecDesc {
-    HcclAlgExecPolicy policy;
-    std::vector<VariantType<TemplateExecDesc, std::shared_ptr<AlgoExecDesc>>> children;
-    // ranksForInputData / ranksForOutputData connect data ownership across stages
+    HcclAlgExecPolicy execPolicy = HcclAlgExecPolicy::SEQUENCE;
+    std::vector<VariantType> children;
+    std::vector<u32> dataSplitRatio;   // Parallel data split ratio
+    u32 subCommMask{0};               // Sub-communicator bitmask for synchronization
+    OmniPipeXYdata omniPipeXYdata;    // OmniPipe pipeline parameters
 };
 ```
 
-`VariantType` is a variant of `TemplateExecDesc` (leaf) or `std::shared_ptr<AlgoExecDesc>` (subtree), supporting arbitrary-depth recursive nesting.
+`VariantType` is a variant (`std::variant`) of `TemplateExecDesc` (leaf) or `std::shared_ptr<AlgoExecDesc>` (subtree), supporting arbitrary-depth recursive nesting.
 
 #### DataParams — Unified Data Parameters
 
@@ -126,12 +133,26 @@ struct AlgoExecDesc {
 // inc/data_types.h
 
 struct DataParams {
-    void* inputData;       // Input data pointer
-    void* outputData;      // Output data pointer
-    void* cclBuffer;       // CCL intermediate buffer
-    DataType dataType;     // Data type
-    uint64_t count;        // Total element count
-    // ... offsets, strides, rank lists, etc.
+    void* inputBufferPtr = nullptr;   // Input data pointer
+    void* outputBufferPtr = nullptr;  // Output data pointer
+    void* cclBufferPtr = nullptr;     // CCL intermediate buffer
+    BufferType inputBufferType = BufferType::INPUT;
+    BufferType outputBufferType = BufferType::OUTPUT;
+    BufferType cclBufferType = BufferType::HCCL_BUFFER;
+    HcclDataType dataType{HCCL_DATA_TYPE_RESERVED};
+    u64 dataOffset{0};       // Start offset in user memory for looping
+    u64 sliceCount{0};       // Element count of current slice
+    u64 sliceOffset{0};      // Parallel sub-slice offset
+    u64 tailCount{0};        // Remainder for non-divisible tail
+    u32 globalTailRankId{INVALID_VALUE_RANKID};  // Tail rank ID
+    u64 dataStride{0};       // Spacing between adjacent slots in user memory
+    u64 scratchStride{0};    // Spacing between adjacent slots in CCL buffer
+    HcclReduceOp reduceOp{HCCL_REDUCE_RESERVED};
+    u32 root{INVALID_VALUE_RANKID};
+    bool enableRemoteMemAccess{false};  // OFFLOAD mode flag
+    u32 userRankSize{0};               // Global rank count for bounds checking
+    std::vector<u32> ranksForInputData;  // Owning rank of each slot in current buffer
+    // ...
 };
 ```
 
@@ -145,28 +166,27 @@ Each Template reads input from `DataParams`, writes output to `CCL Buffer`, and 
 | -------------- | ----------------------- | ------------------------------------------------------------------ |
 | **SEQUENCE**  | Children execute sequentially | Prior child's `ranksForOutputData` = next child's `ranksForInputData` |
 | **PARALLEL**  | Children execute in parallel | Data is partitioned to each child for independent processing       |
-| **OMNIPIPE**  | Pipeline overlap         | Receive, compute, and send concurrently, minimizing bubble overhead |
+| **OMNIPIPE**  | Pipeline overlap         | Receive, compute, and send concurrently; subtree must all be OMNIPIPE, exactly 2 children, supports recursive nesting |
 
 `ranksForInputData` / `ranksForOutputData` are data ownership contracts connecting stages, ensuring data consistency across SEQUENCE stages.
 
 ### Algorithm Assembly Example
 
-Using AllGather with four-level topology as an example, assembled as a SEQUENCE tree:
+Using AllGather with four-level topology as an example, assembled as a flat SEQUENCE tree (see `experimental/ops/all_gather/all_gather.cc`):
 
 ```text
-AlgoExecDesc(policy=SEQUENCE)
-├── TemplateExecDesc(Mesh)       // layer0: intra-server Mesh AllGather
-├── AlgoExecDesc(policy=SEQUENCE)
-│   └── TemplateExecDesc(NHR)    // layer1: cross-server NHR AllGather
-├── AlgoExecDesc(policy=SEQUENCE)
-│   └── TemplateExecDesc(NHR)    // layer2: cross-super-pod NHR AllGather
-└── TemplateExecDesc(Mesh)       // layer3: cross-super-pod Mesh finalization
+AlgoExecDesc(execPolicy=SEQUENCE)
+├── TemplateExecDesc(Mesh, subCommIndex=3)  // layer3: cross-super-pod
+├── TemplateExecDesc(NHR,  subCommIndex=2)  // layer2: cross-super-pod NHR
+├── TemplateExecDesc(NHR,  subCommIndex=1)  // layer1: cross-server NHR
+└── TemplateExecDesc(Mesh, subCommIndex=0)  // layer0: intra-server Mesh
 ```
 
 ### OpsExecutor Recursive Orchestration
 
 ```cpp
 // executor/ops_executor.cc
+// Note: The following is pseudocode, illustrating recursive orchestration logic only, not the real signature.
 
 void OpsExecutor::OrchestrateLoop(const AlgoExecDesc& hcclAlgorithm, const DataParams& params) {
     switch (hcclAlgorithm.policy) {
@@ -184,7 +204,8 @@ void OpsExecutor::OrchestrateLoop(const AlgoExecDesc& hcclAlgorithm, const DataP
             // Partition data and execute in parallel
             break;
         case OMNIPIPE:
-            // Pipeline overlap orchestration
+            // Pipeline overlap: subtree must all be OMNIPIPE, exactly 2 children,
+            // computes step count and data slices via OmniPipeXYdata, recursively orchestrates subtree
             break;
     }
 }
@@ -212,7 +233,7 @@ This separation ensures that Template only concerns itself with the execution fr
 `TopoMatchFourLevel` (`topo/topo_match_four_level.h`) implements four-level symmetric topology matching:
 
 - Detects the current rank's position in the four-level topology
-- Selects the corresponding Template for each level (Mesh / NHR / OCS)
+- Selects the corresponding Template for each level (the specific communication primitive depends on the actual topology)
 - The current implementation requires symmetric topology (consistent view across all ranks)
 
 ---
@@ -250,37 +271,40 @@ The switch function `IsRecursiveExecutorEnabled()` is defined in `executor/adapt
 Register algorithms to the `AlgSelector` singleton via the `REGISTER_ALG` macro:
 
 ```cpp
-// algorithm/all_gather.cc — existing registration example
+// experimental/ops/all_gather/all_gather.cc — existing registration example
 
-static void RegisterAllGather() {
-    auto& selector = AlgSelector::Instance();
-    selector.Register("AllGather", BuildAllGatherHcclAlgorithm());
+static HcclAlgorithm MakeAicpuAllGatherSequenceMeshNHRNHRMesh()
+{
+    HcclAlgorithm algo;
+    algo.hcclCmdType = HcclCMDType::HCCL_CMD_ALLGATHER;
+    algo.engineType  = HcclAlgEngineType::COMM_ENGINE_AICPU;
+    algo.topoMatch   = std::make_shared<TopoMatchFourLevel>();
+    algo.algoExecDesc = MakeAllGather4LevelAlgoExecDesc();
+    algo.algName     = "AicpuAllGatherSequenceMeshNHRNHRMesh";
+    return algo;
 }
 
-REGISTER_ALG("AllGather", RegisterAllGather);
+REGISTER_ALG(
+    HcclCMDType::HCCL_CMD_ALLGATHER, AicpuAllGatherSequenceMeshNHRNHRMesh,
+    MakeAicpuAllGatherSequenceMeshNHRNHRMesh());
 ```
 
-`BuildAllGatherHcclAlgorithm()` assembles the algorithm tree (`AlgoExecDesc`), returning an `HcclAlgorithm` containing the algorithm tree and parameter mapping functions.
+`MakeAllGather4LevelAlgoExecDesc()` assembles the algorithm tree (`AlgoExecDesc`). `REGISTER_ALG` registers the algorithm into `AlgSelector` and the executor into `CollAlgExecRegistryV2` in one step, with both tables linked by the same algorithm name.
 
 ### Adding a New Template
 
-1. Create a new Template class under `template/<engine>/`, inheriting from `BaseTemplate`
-2. Implement `PreCopy`, `RunAlgorithm`, `SendAll`, `PostCopy` methods
-3. Register in `template_factory.h`'s `GetTemplate()`
+1. Create a new Template class under `template/aicpu/`, inheriting from `AicpuBaseTemplate`
+2. Implement `RunAlgorithm` (pure virtual); override `PreCopy`, `PostCopy` as needed, plus `SendAll` customization hooks (`BuildTransferContext`/`CanParallelPostCopy`/`LaunchPostCopy`)
+3. Register the Template class to the factory table via the `REGISTER_RE_TEMPLATE` macro
 
 ```cpp
-// template_factory.h
+// template/aicpu/allgather_mesh_template.cc
 
-std::shared_ptr<BaseTemplate> GetTemplate(const TemplateDesc& desc) {
-    switch (desc.type) {
-        case TemplateType::ALLGATHER_MESH:
-            return std::make_shared<AllGatherMeshTemplate>(desc);
-        case TemplateType::ALLGATHER_NHR:
-            return std::make_shared<AllGatherNhrTemplate>(desc);
-        // Register new Templates here
-    }
-}
+REGISTER_RE_TEMPLATE(
+    HcclCMDType::HCCL_CMD_ALLGATHER, HcclAlgoType::HCCL_ALGO_TYPE_FULLMESH, AllGatherMeshTemplate)
 ```
+
+`REGISTER_RE_TEMPLATE` registers the Template class into the `TemplateRegistry` singleton. The framework looks up and creates instances via `GetTemplate()` based on `TemplateDesc`. To add a new Template, simply invoke this macro—no need to modify `GetTemplate` itself.
 
 ### Adding a New CommPlanner
 
@@ -293,11 +317,11 @@ Existing CommPlanners:
 | CommPlanner          | File                              | Description                                              |
 | ------------------ | --------------------------------- | -------------------------------------------------------- |
 | `RunMeshAllGather` | `comm_planners/mesh_comm_planner.cc`  | Mesh topology AllGather                                  |
-| `RunNhrAllGather`  | `comm_planners/nhr_comm_planner.cc`   | NHR topology AllGather (halving algorithm + last-step direct-write optimization) |
+| `RunNhrAllGather`  | `comm_planners/nhr_comm_planner.cc`   | NHR topology AllGather (halving algorithm) |
 
 ### Adding a New Operator
 
-1. Create a new `<op_name>.cc` under `algorithm/`
+1. Create a new `<op_name>.cc` under `experimental/ops/<op>/` (e.g., `all_gather.cc`)
 2. Assemble the algorithm tree `AlgoExecDesc`, setting execution strategy and data parameter mapping
 3. Register with `REGISTER_ALG`
 4. (Optional) Add new Template / CommPlanner
@@ -312,9 +336,9 @@ The RFC is planned in three phases. Currently in Phase 1:
 
 | Phase   | Goal                                                | Status     |
 | -------- | --------------------------------------------------- | ---------- |
-| Phase 1  | Core framework + AllGather + AICPU engine + four-level symmetric topology | ✅ Implemented |
-| Phase 2  | Multi-operator coverage + PARALLEL strategy + multi-engine (AIV/CCU) | ⏳ Planned  |
-| Phase 3  | OMNIPIPE pipeline + asymmetric topology + production integration | ⏳ Planned  |
+| Phase 1  | Core framework + AllGather + AICPU engine + four-level symmetric topology + SEQUENCE/PARALLEL/OMNIPIPE strategies | ✅ Implemented |
+| Phase 2  | Multi-operator coverage + multi-engine (AIV/CCU) | ⏳ Planned  |
+| Phase 3  | Asymmetric topology + production integration | ⏳ Planned  |
 
 ### Implemented
 
@@ -323,15 +347,15 @@ The RFC is planned in three phases. Currently in Phase 1:
   - **SEQUENCE**: Children execute sequentially, prior output = next input
   - **PARALLEL**: Children execute in parallel, data partitioned by `dataSplitRatio`, with pre/post sub-communicator synchronization
   - **OMNIPIPE**: Pipeline overlap orchestration, computes step count and data slices based on `OmniPipeXYdata`, supports 2D bandwidth modeling
-- **Algorithm registration**: `AlgSelector` singleton + `REGISTER_ALG` macro (macro defined, no instantiation calls yet)
+- **Algorithm registration**: `AlgSelector` singleton + `REGISTER_ALG` macro (`experimental/ops/all_gather/all_gather.cc` has instantiated the 4-level AllGather registration, guarded by the runtime switch `HCCL_EXPERIMENTAL_RECURSIVE_EXECUTOR`, which is off by default)
 - **Template implementations**:
   - `AllGatherMeshTemplate` (`template/aicpu/allgather_mesh_template.cc`) — Mesh AllGather, supports DirectToOutput mode
-  - `AllGatherNhrTemplate` (`template/aicpu/allgather_nhr_template.cc`) — NHR AllGather, parallel PostCopy DMA optimization
+  - `AllGatherNhrTemplate` (`template/aicpu/allgather_nhr_template.cc`) — NHR AllGather, parallel PostCopy DMA optimization + last-step direct-write optimization
 - **CommPlanner implementations**:
   - `RunMeshAllGather` (`template/comm_planners/mesh_comm_planner.cc`)
-  - `RunNhrAllGather` (`template/comm_planners/nhr_comm_planner.cc`) — Recursive halving algorithm, `CanReadLastStepToOutput` last-step direct write
+  - `RunNhrAllGather` (`template/comm_planners/nhr_comm_planner.cc`) — Recursive halving algorithm
 - **Topology matching**: `TopoMatchFourLevel` (`topo/topo_match_four_level.cc`) — four-level symmetric topology
-- **Executor adapter**: `AdaptorExecutor` (`executor/adaptor_executor.cc`) — bridges HCCL framework, `REGISTER_ALG` macro integration
+- **Executor adapter**: `AdaptorExecutorBase` (`executor/adaptor_executor.cc`) — bridges HCCL framework, `REGISTER_ALG` macro integration
 - **OmniPipe utilities**: `OmniPipeXYdata` data structure + 2D bandwidth modeling + data slice computation (`executor/omnipipe_utils.h` / `.cc`), integrated into `OrchestrateOmniPipeLoop` main flow
 
 ### Not Implemented / Planned
@@ -339,7 +363,7 @@ The RFC is planned in three phases. Currently in Phase 1:
 - **Multi-engine**: Only AICPU; AIV (AI Core Vector) / CCU not implemented
 - **Multi-operator**: Only AllGather; AllReduce / Broadcast / ReduceScatter / AlltoAll etc. not implemented
 - **Asymmetric topology**: Only symmetric four-level topology supported
-- **OCS CommPlanner**: layer3 OCS communication primitive not implemented
+- **Cross-super-pod CommPlanner**: layer3 cross-super-pod communication primitive not implemented
 
 ---
 
@@ -348,9 +372,9 @@ The RFC is planned in three phases. Currently in Phase 1:
 1. **Experimental, not in production builds**: This module resides under `experimental/`, does not participate in production builds by default, and does not guarantee compatibility. APIs may change at any time.
 2. **Single engine**: Only AICPU engine Templates are implemented; AIV / CCU engines are not supported.
 3. **Single operator**: Only AllGather is registered; AllReduce / Broadcast / ReduceScatter / AlltoAll / Send / Recv etc. are not supported.
-4. **Limited execution strategy coverage**: SEQUENCE, PARALLEL, and OMNIPIPE strategies are all implemented, but OMNIPIPE only supports AllReduce/AllGather operators and depends on 2D bandwidth modeling parameters.
+4. **Limited execution strategy coverage**: SEQUENCE, PARALLEL, and OMNIPIPE strategies are all implemented, but OMNIPIPE requires all subtree nodes to be OMNIPIPE with exactly 2 children; the currently registered algorithm (AllGather) uses SEQUENCE, and OMNIPIPE has not yet been used in any registered operator.
 5. **Symmetric topology requirement**: `TopoMatchFourLevel` requires symmetric four-level topology (consistent view across all ranks); asymmetric topology is not supported.
-6. **Limited test coverage**: The framework has structure, but UT / ST coverage is incomplete; tests should be supplemented before production use.
+6. **Limited test coverage**: UT covers 5 core modules (omnipipe_utils/data_ops/comm_planner/algo_desc/data_transfer); ST has no coverage yet.
 
 ---
 

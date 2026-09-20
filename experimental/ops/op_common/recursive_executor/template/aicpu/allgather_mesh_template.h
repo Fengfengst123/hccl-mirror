@@ -33,9 +33,9 @@ protected:
     HcclResult
     RunAlgorithm(std::vector<DataSlicesList>& txRxSlicesLists, std::vector<u32>& ranksForOutputData) override;
 
-    HcclResult SendAll(
-        const std::vector<DataSlicesList>& txRxSlicesLists, TemplateResource& templateResource,
-        const std::vector<ThreadHandle>& threads) override;
+    TransferContext BuildTransferContext(
+        const DataSlicesList& txRxSlicesList, TemplateResource& templateResource, bool isLastStep,
+        bool parallelPostCopy) const override;
 
     HcclResult PostCopy(const std::vector<ThreadHandle>& threads) override;
 };

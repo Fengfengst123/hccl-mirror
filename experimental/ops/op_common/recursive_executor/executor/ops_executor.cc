@@ -356,6 +356,27 @@ HcclResult OpsExecutor::CalcTemplateChannelRes(
     return HCCL_SUCCESS;
 }
 
+HcclResult OpsExecutor::SetTemplateChannelConfig(BaseTemplate* tpl, int subCommIndex)
+{
+    if (tpl == nullptr) {
+        HCCL_ERROR("[SetTemplateChannelConfig] template pointer is null.");
+        return HCCL_E_PARA;
+    }
+    if (!channelTable_.empty() && subCommIndex >= 0 && static_cast<size_t>(subCommIndex) < channelTable_.size()) {
+        u32 maxCh = 1;
+        for (const auto& pair : channelTable_.at(subCommIndex)) {
+            if (pair.second.size() > maxCh) {
+                maxCh = static_cast<u32>(pair.second.size());
+            }
+        }
+        tpl->SetChannelsPerRank(maxCh);
+    } else if (
+        !calcResMaxCh_.empty() && subCommIndex >= 0 && static_cast<size_t>(subCommIndex) < calcResMaxCh_.size()) {
+        tpl->SetChannelsPerRank(calcResMaxCh_.at(subCommIndex));
+    }
+    return HCCL_SUCCESS;
+}
+
 HcclResult OpsExecutor::GetTemplateRes(const TemplateExecDesc& templateExeDes)
 {
     int subCommIndex = templateExeDes.subCommIndex;
@@ -364,18 +385,7 @@ HcclResult OpsExecutor::GetTemplateRes(const TemplateExecDesc& templateExeDes)
     auto baseTemplate = GetTemplate(templateExeDes.templateDesc, templateRanks, myRank_);
     BaseTemplate* baseTemplatePtr = baseTemplate.get();
     CHK_PTR_NULL(baseTemplatePtr);
-    if (!channelTable_.empty() && subCommIndex >= 0 && static_cast<size_t>(subCommIndex) < channelTable_.size()) {
-        u32 maxCh = 1;
-        for (const auto& pair : channelTable_.at(subCommIndex)) {
-            if (pair.second.size() > maxCh) {
-                maxCh = static_cast<u32>(pair.second.size());
-            }
-        }
-        baseTemplatePtr->SetChannelsPerRank(maxCh);
-    } else if (
-        !calcResMaxCh_.empty() && subCommIndex >= 0 && static_cast<size_t>(subCommIndex) < calcResMaxCh_.size()) {
-        baseTemplatePtr->SetChannelsPerRank(calcResMaxCh_.at(subCommIndex));
-    }
+    CHK_RET(SetTemplateChannelConfig(baseTemplatePtr, subCommIndex));
     AlgResourceRequest tempRequest;
     CHK_RET(baseTemplatePtr->GetRes(tempRequest));
     HCCL_DEBUG(
@@ -541,6 +551,7 @@ OpsExecutor::GenTemplateDataParams(AlgoExecDataDesc& algoExecDataDesc, DataParam
     templateDataParams.reduceOp = dataInfo_.reduceOp;
     templateDataParams.root = (overrideRoot != INVALID_VALUE_RANKID) ? overrideRoot : root_;
     templateDataParams.enableRemoteMemAccess = opMode_ == OpMode::OFFLOAD;
+    templateDataParams.userRankSize = rankSize_;
     templateDataParams.dataStride = algoExecDataDesc.dataStride;
     templateDataParams.scratchStride = algoExecDataDesc.scratchStride;
     if (algoExecDataDesc.ranksForInputDataGroup.size() != 1) {
@@ -691,6 +702,10 @@ OpsExecutor::RunTemplateDesc(TemplateExecDesc* templateExeDes, AlgoExecDataDesc&
     auto baseTemplate = GetTemplate(templateExeDes->templateDesc, cachedTemplateRanks_.at(subCommIndex), myRank_);
     BaseTemplate* baseTemplatePtr = baseTemplate.get();
     CHK_PTR_NULL(baseTemplatePtr);
+    // 运行实例由 GetTemplate 新建，channelsPerRank_ 为默认值 1、dataSize_ 为默认值 0，
+    // 需补齐与资源阶段（GetTemplateRes）一致的设置，否则多通道并行 PostCopy 仅覆盖 channel 0 导致数据丢失
+    CHK_RET(SetTemplateChannelConfig(baseTemplatePtr, subCommIndex));
+    baseTemplatePtr->SetDataSize(dataInfo_.inputSize);
     TemplateResource& templateResource = cachedTemplateResources_.at(subCommIndex);
     DataParams templateDataParams;
     CHK_RET(GenTemplateDataParams(algoExecDataDesc, templateDataParams, overrideRoot));

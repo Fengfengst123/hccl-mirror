@@ -48,7 +48,14 @@ struct DataSlice {
     u64 size_{0};   // Slice的数据大小，单位：字节
     u64 count_{0};  // 数据元素个数
 
-    DataSlice(void* addr, u64 offset, u64 size, u64 count) : addr_(addr), offset_(offset), size_(size), count_(count) {}
+    // 构造时校验：count > 0 时 size 不应为 0（避免下游除零）。
+    // DataSlice 为热路径数据载体，此处仅做 debug 断言，不影响 release 性能。
+    DataSlice(void* addr, u64 offset, u64 size, u64 count) : addr_(addr), offset_(offset), size_(size), count_(count)
+    {
+        if (count > 0 && size == 0) {
+            HCCL_ERROR("[DataSlice] invalid params: addr=%p, offset=%lu, size=0, count=%lu.", addr, offset, count);
+        }
+    }
 
     DataSlice(void* addr, u64 offset, u64 size) : addr_(addr), offset_(offset), size_(size) { count_ = 0; }
 
@@ -68,6 +75,11 @@ struct SlicesList {
     SlicesList(const std::vector<DataSlice>& srcSlices, const std::vector<DataSlice>& dstSlices)
         : srcSlices_(srcSlices),
           dstSlices_(dstSlices)
+    {}
+
+    SlicesList(std::vector<DataSlice>&& srcSlices, std::vector<DataSlice>&& dstSlices)
+        : srcSlices_(std::move(srcSlices)),
+          dstSlices_(std::move(dstSlices))
     {}
 };
 

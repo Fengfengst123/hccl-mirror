@@ -36,21 +36,21 @@ HCCL 当前支持 2\~3 层网络拓扑：
 3 层：server 内 Mesh (layer0) + 跨 server NHR (layer1) + 跨 super-pod NHR (layer2)
 ```
 
-每种拓扑层级组合下，每个算子（AllGather/AllReduce/Broadcast/ReduceScatter/Scatter）都需要对应的 Executor + Template 实现。四层组网拓扑在此基础上新增第 4 层（跨 super-pod 的 OCS 层）：
+每种拓扑层级组合下，每个算子（AllGather/AllReduce/Broadcast/ReduceScatter/Scatter）都需要对应的 Executor + Template 实现。四层组网拓扑在此基础上新增第 4 层（跨 super-pod 互联层）：
 
 ```text
-4 层：server 内 Mesh (layer0) + 跨 server NHR (layer1) + 跨 super-pod NHR (layer2) + **跨 super-pod OCS (layer3) ← 新增**
+4 层：server 内 Mesh (layer0) + 跨 server NHR (layer1) + 跨 super-pod NHR (layer2) + **跨 super-pod 互联 (layer3) ← 新增**
 ```
 
 在旧架构下，适配四层拓扑意味着每个算子新增 4 层编排执行器，且与 3 层代码大量重复（4 层的前三阶段与 3 层完全相同，仅多了第 4 层），工作量线性膨胀：6 个算子 ×（Sequence + Parallel + 可能的 OmniPipe 变体）≈ 12-18 个新执行器类，每个 300-500 行。
 
 这正是重构的核心驱动力：**需要一个能抽象描述任意层级组合的统一数据结构，使新增拓扑层级只需在算法表中注册算法执行策略，而非复制整套执行器代码，即可实现新增算法**。
 
-在重构后的架构中，4 层 AllGather 的算法只是在 3 层算法上再追加一层 `AllGather_Mesh1DOcs` ：
+在重构后的架构中，4 层 AllGather 的算法只是在 3 层算法上再追加一层跨 super-pod 互联层：
 
 ```mermaid
 flowchart LR
-    L0["Mesh1D<br/>Level 0"] --> L1["NHR<br/>Level 1"] --> L2["NHR<br/>Level 2"] --> L3["<span style='color:red'>Mesh1DOcs<br/>Level 3 ← 新增</span>"]
+    L0["Mesh1D<br/>Level 0"] --> L1["NHR<br/>Level 1"] --> L2["NHR<br/>Level 2"] --> L3["<span style='color:red'>Mesh1D（FULLMESH）<br/>Level 3 ← 新增</span>"]
 ```
 
 ### 代码量对比
@@ -198,11 +198,13 @@ virtual HcclResult RunAlgorithm(std::vector<TxRxSlicesList> &txRxSlicesLists,
 // 默认：将本 rank 的 input 拷贝到 output 和 ccl buffer[myRank]
 virtual HcclResult PreCopy(const std::vector<ThreadHandle> &threads);
 
-// 统一执行 SendRecv
-// 默认：走 WRITE 方向（本端写到对端 ccl buffer）
-virtual HcclResult SendAll(const std::vector<TxRxSlicesList> &txRxSlicesLists,
-                           TemplateResource &templateResource,
-                           const std::vector<ThreadHandle> &threads);
+// SendAll 定制化 hook：子类覆写以改变传输上下文构建与并行 PostCopy 行为
+// 默认：WRITE 方向（本端写到对端 ccl buffer），无并行 PostCopy
+virtual TransferContext BuildTransferContext(
+    const DataSlicesList& txRxSlicesList, TemplateResource& templateResource, bool isLastStep,
+    bool parallelPostCopy) const;
+virtual bool CanParallelPostCopy(const TemplateResource& templateResource) const;
+virtual HcclResult LaunchPostCopy(const std::vector<ThreadHandle>& threads, const ThreadHandle& lastWriteThread);
 
 // 通信后本地处理（ccl buffer → output）
 // 默认：将 ccl buffer 中其它 rank 的数据搬回 output
@@ -256,7 +258,7 @@ virtual HcclResult GetRes(AlgResourceRequest &res) const;
 
 ### 1. 代码合入路径：experimental/ops/op\_common/recursive\_executor/
 
-根据 `experimental/README.md` 规范，重构代码落在 `experimental/ops/op_common/recursive_executor/`（位于 `experimental/ops/op_common/` 下，结构与 `src` 一致，含 `executor/`、`template/`、`topo/`、`inc/`；`algorithm/` 目录待 Phase 1 算法注册补全时创建）。
+根据 `experimental/README.md` 规范，重构代码落在 `experimental/ops/op_common/recursive_executor/`（位于 `experimental/ops/op_common/` 下，结构与 `src` 一致，含 `executor/`、`template/`、`topo/`、`inc/`；算子级注册代码落在 `experimental/ops/<op>/`，如 `experimental/ops/all_gather/all_gather.cc`）。
 
 - **不影响主干**：recursive\_executor 后续通过算子注册机制接入商用代码运行，src 原流程结构零改动（仅 Selector 多一个 4 级拓扑分支），对现有构建和发布影响可控。
 
@@ -264,7 +266,7 @@ virtual HcclResult GetRes(AlgResourceRequest &res) const;
 
 灰度接入分三阶段：
 
-1. **Phase 1**：AllGather算子，4 级拓扑 Sequence（Mesh+NHR×2+Mesh），单引擎（Aicpu）。当前 `experimental/ops/op_common/recursive_executor/` 已搭建骨架（`TopoMatchFourLevel` + `AdaptorExecutor` + `OpsExecutor` 骨架 + `AllGatherMesh/NhrTemplate` + `Mesh/NhrCommPlanner`），算法注册（`algorithm/all_gather.cc`）待补全。
+1. **Phase 1**：AllGather算子，4 级拓扑 Sequence（Mesh+NHR×2+Mesh），单引擎（Aicpu）。当前 `experimental/ops/op_common/recursive_executor/` 已搭建骨架（`TopoMatchFourLevel` + `AdaptorExecutorBase` + `OpsExecutor` + `AllGatherMesh/NhrTemplate` + `Mesh/NhrCommPlanner`），算法注册已在 `experimental/ops/all_gather/all_gather.cc` 落地（4 级 AllGather，受运行期开关守卫）。
 2. **Phase 2**：AllGather 单层 Mesh/NHR、多层 Sequence/Parallel/Concurrent，以及 ReduceScatter/AllReduce/Broadcast/Scatter 算子，多引擎。
 3. **Phase 3**：全算子覆盖，OmniPipe 流水。
 
@@ -285,7 +287,7 @@ classDiagram
         AlgAttrs algAttrs
         AlgoExecDesc algoExecDesc
         string algName
-        + GetExecutor(OpParam&) OpsExecutor
+        + GetExecutor(const OpParam&) OpsExecutor
         + Dump()
     }
     class TopoMatchBaseV2 {
@@ -350,7 +352,7 @@ struct AlgoExecDesc {
 
 class HcclAlgorithm {
 public:
-    std::unique_ptr<OpsExecutor> GetExecutor(OpParam& param);
+    std::unique_ptr<OpsExecutor> GetExecutor(const OpParam& param);
     void Dump();
     HcclCMDType hcclCmdType;
     HcclAlgEngineType engineType;
@@ -428,7 +430,7 @@ private:
 
 ##### 算法注册示例（4 级 AllGather）
 
-`experimental/ops/op_common/recursive_executor/algorithm/all_gather.cc`展示了完整注册流程：先组装算法树，再注册算法 + 注册执行器（`REGISTER_ALG` 见第 3 节）：
+`experimental/ops/all_gather/all_gather.cc`展示了完整注册流程：先组装算法树，再注册算法 + 注册执行器（`REGISTER_ALG` 见第 3 节）：
 
 ```cpp
 // 4级串行：Mesh(layer3) -> NHR(layer2) -> NHR(layer1) -> Mesh(layer0)
@@ -448,19 +450,26 @@ static AlgoExecDesc MakeAllGather4LevelAlgoExecDesc()
     return desc;
 }
 
-static HcclAlgorithm MakeAllGather4LevelAlgo()
+static HcclAlgorithm MakeAicpuAllGatherSequenceMeshNHRNHRMesh()
 {
     HcclAlgorithm algo;
     algo.hcclCmdType = HcclCMDType::HCCL_CMD_ALLGATHER;
     algo.engineType  = HcclAlgEngineType::COMM_ENGINE_AICPU;
     algo.topoMatch   = std::make_shared<TopoMatchFourLevel>();
+#ifndef AICPU_COMPILE
+    AlgAttrsRegistry::ParseAlgName("AicpuAllGatherSequenceMeshNHRNHRMesh", algo.algAttrs);
+#else
+    algo.algAttrs.name = "AicpuAllGatherSequenceMeshNHRNHRMesh";
+#endif
     algo.algoExecDesc = MakeAllGather4LevelAlgoExecDesc();
-    algo.algName     = "AicpuAllGatherSequenceMeshNHRNHRMesh";
+    algo.algName      = "AicpuAllGatherSequenceMeshNHRNHRMesh";
     return algo;
 }
 
 // 注册算法到 AlgSelector + 注册执行器到 CollAlgExecRegistryV2
-REGISTER_ALG(HcclCMDType::HCCL_CMD_ALLGATHER, AicpuAllGatherSequenceMeshNHRNHRMesh, MakeAllGather4LevelAlgo());
+REGISTER_ALG(
+    HcclCMDType::HCCL_CMD_ALLGATHER, AicpuAllGatherSequenceMeshNHRNHRMesh,
+    MakeAicpuAllGatherSequenceMeshNHRNHRMesh());
 ```
 
 新增算法只需三步：编写工厂函数（组装 `AlgoExecDesc` 树）、复用或新增 `TopoMatchBaseV2` 匹配器、追加一行 `REGISTER_ALG`。
@@ -680,20 +689,22 @@ OmniPipe（跨层流水）是 2D 网格上"慢轴/快轴按 Step 交替通信以
 
 ###### OmniPipe 算法表达
 
-`OMNIPIPE` 节点与 `PARALLEL` 不同：它要求**恰好 2 个 Child**（`OmniPipeUpdateEqBWAndReorder` 对 `children.size() != 2` 直接报错），两个 Child 分别代表慢轴 X 和快轴 Y，各 Child 既可以是 `TemplateExecDesc` 叶子，也可以是子树（如每个轴各是一棵 Sequence 树）：
+`OMNIPIPE` 节点与 `PARALLEL` 不同：它要求**恰好 2 个 Child**（`OmniPipeUpdateEqBWAndReorder` 对 `children.size() != 2` 直接报错），两个 Child 分别代表慢轴 X 和快轴 Y。Child 既可以是 `TemplateExecDesc` 叶子，也可以是子树，但子树必须同为 `OMNIPIPE` 策略（`ValidateAlgoExecDesc` 校验：OMNIPIPE 节点的子树 Child 若非 OMNIPIPE 则报错），支持递归嵌套：
 
 ```cpp
 AlgoExecDesc root {
     .execPolicy = OMNIPIPE,
     .children = {
-        // 轴 X（慢轴）：沿某层子通信域的 AllGather 子树
-        AlgoExecDesc { SEQUENCE, { meshLevel0, nhrLevel1 }, {1, 1} },
-        // 轴 Y（快轴）：沿另一层子通信域的 AllGather 子树
-        AlgoExecDesc { SEQUENCE, { nhrLevel1, meshLevel0 }, {1, 1} }
+        // 轴 X（慢轴）：沿某层子通信域的 AllGather 叶子
+        TemplateExecDesc { ALLGATHER, FULLMESH, subCommIndex=0 },
+        // 轴 Y（快轴）：沿另一层子通信域的 AllGather 叶子
+        TemplateExecDesc { ALLGATHER, NHR, subCommIndex=1 }
     },
     .dataSplitRatio = {1, 1}
 };
 ```
+
+若需更复杂的拓扑组合，子树可递归使用 `OMNIPIPE` 策略嵌套，但不能使用 `SEQUENCE`/`PARALLEL` 作为 OMNIPIPE 的子树。
 
 当前约束：`OMNIPIPE` 策略仅支持 `ALLREDUCE`/`ALLGATHER` 两个命令（`OpsExecutor::Orchestrate` 对其它命令直接报错）。
 
@@ -954,15 +965,14 @@ HcclResult AdaptorExecutorBase::CalcAlgHierarchyInfo(...)
     return alg.topoMatch->MatchTopo(topoInfo, algHierarchyInfo, alg.algAttrs);
 }
 
-// 2. 资源计算：按 param.algName 构造 OpsExecutor，并补一次拓扑匹配
+// 2. 资源计算：按 algName_ 构造 OpsExecutor，并补一次拓扑匹配
 HcclResult AdaptorExecutorBase::CalcRes(HcclComm comm, const OpParam& param, ...)
 {
     if (!executor_) {
         HcclAlgorithm alg;
-        AlgSelector::Instance().GetAlgorithm(param.algName, alg);
-        OpParam& mutableParam = const_cast<OpParam&>(param);
-        executor_ = alg.GetExecutor(mutableParam);              // new OpsExecutor
-        executor_->InitAlgHierarchyInfo(comm, topoInfo, algHierarchyInfo);
+        AlgSelector::Instance().GetAlgorithm(algName_, alg);
+        executor_ = alg.GetExecutor(param);                     // new OpsExecutor
+        executor_->InitAlgHierarchyInfo(topoInfo, algHierarchyInfo);
     }
     return executor_->CalcRes(comm, resourceRequest);
 }
@@ -972,16 +982,16 @@ HcclResult AdaptorExecutorBase::Orchestrate(const OpParam& param, const AlgResou
 {
     if (!executor_) {
         HcclAlgorithm algo;
-        AlgSelector::Instance().GetAlgorithm(param.algName, algo);
-        executor_ = algo.GetExecutor(const_cast<OpParam&>(param));
+        AlgSelector::Instance().GetAlgorithm(algName_, algo);
+        executor_ = algo.GetExecutor(param);
     }
-    return executor_->Orchestrate(const_cast<AlgResourceCtxSerializable&>(resCtx));
+    return executor_->Orchestrate(resCtx);
 }
 ```
 
 要点：
 
-- **算法名是唯一纽带**：`CalcRes`/`Orchestrate` 均按 `param.algName` 从 `AlgSelector` 取回算法定义，与 src 通过 `param.algName` 路由执行器的机制完全一致，双端（Host 库 / AICPU 内核）都能重建出同一棵算法树。
+- **算法名是唯一纽带**：`CalcRes`/`Orchestrate` 均按 `algName_`（构造期绑定的算法名）从 `AlgSelector` 取回算法定义，src 通过 `param.algName` 路由到 `AdaptorExecutorImpl` 后由其成员 `algName_` 承接，双端（Host 库 / AICPU 内核）都能重建出同一棵算法树。
 - **`OpsExecutor`** **生命周期**：一个 `AdaptorExecutor` 实例内 `CalcRes` 创建、`Orchestrate` 复用，避免重复构造开销。
 
 #### 3.4 注册宏：把 recursive\_executor 执行器挂进 src 注册表
@@ -1113,7 +1123,7 @@ sequenceDiagram
 
 文件：`experimental/ops/op_common/recursive_executor/template/aicpu/xxx_template.h` + `.cc`
 
-继承 `AicpuBaseTemplate`，实现 `RunAlgorithm()` 调用通信计划器生成 `TxRxSlicesList`，按需重写 `SendAll()`/`PostCopy()`/`GetRes()`。Template 的执行骨架（`PreCopy → RunAlgorithm → SendAll → PostCopy`）见 2.4 节。若已有 CommPlanner（如 `RunMeshAllGather`/`RunNhrAllGather` 等）不满足需求，需配套新增对应 CommPlanner 函数（文件置于 `template/comm_planners/xxx_comm_planner.h` + `.cc`），负责计算通信对端、数据切片和传输方向，输出 `TxRxSlicesList`，不执行通信、不管理资源（分工见 2.4 节）。
+继承 `AicpuBaseTemplate`，实现 `RunAlgorithm()` 调用通信计划器生成 `TxRxSlicesList`，按需重写 `PreCopy()`/`PostCopy()`/`GetRes()`，以及 `SendAll` 定制化 hook（`BuildTransferContext`/`CanParallelPostCopy`/`LaunchPostCopy`）。Template 的执行骨架（`PreCopy → RunAlgorithm → SendAll → PostCopy`）见 2.4 节。若已有 CommPlanner（如 `RunMeshAllGather`/`RunNhrAllGather` 等）不满足需求，需配套新增对应 CommPlanner 函数（文件置于 `template/comm_planners/xxx_comm_planner.h` + `.cc`），负责计算通信对端、数据切片和传输方向，输出 `TxRxSlicesList`，不执行通信、不管理资源（分工见 2.4 节）。
 
 ```cpp
 // xxx_template.h
@@ -1152,7 +1162,7 @@ REGISTER_RE_TEMPLATE(HCCL_CMD_ALLGATHER, HCCL_ALGO_TYPE_XXX, XxxTemplate);
 
 **1. 组装算法树并注册**
 
-文件：`experimental/ops/op_common/recursive_executor/algorithm/<op>.cc`（如 `all_gather.cc`）
+文件：`experimental/ops/<op>/<op>.cc`（如 `experimental/ops/all_gather/all_gather.cc`）
 
 按 1.1 节的 `HcclAlgorithm` 三层描述结构和 2.1 节的组装方式编写工厂函数，再用 `REGISTER_ALG` 一步完成算法入 `AlgSelector` 和执行器入 `CollAlgExecRegistryV2`（注册机制见 1.3 节与 3.4 节）：
 
@@ -1217,8 +1227,8 @@ set(RE_CORE_SRC
 | -------------- | ---- | ---- | ----------------------------------------------------- |
 | 新增 CommPlanner | —    | 按需   | `template/comm_planners/xxx_comm_planner.h` + `.cc`  |
 | 新增 Template    | —    | 是    | `template/aicpu/xxx_template.h` + `.cc`               |
-| Template 工厂注册  | —    | 是    | `template/template_factory.h` 中新增分支                   |
-| 算法树组装与注册       | 是    | 是    | `algorithm/<op>.cc` 中新增工厂函数 + `REGISTER_ALG`          |
+| Template 工厂注册  | —    | 是    | 用 `REGISTER_RE_TEMPLATE` 宏注册到 `TemplateRegistry`                    |
+| 算法树组装与注册       | 是    | 是    | `experimental/ops/<op>/<op>.cc` 中新增工厂函数 + `REGISTER_ALG`          |
 | CMakeLists.txt | 是    | 是    | 新增源文件条目                                               |
 | Selector 分支    | 是    | 是    | `src/ops/<op>/selector/<op>_auto_selector.cc` 中新增拓扑分支 |
 
@@ -1237,7 +1247,7 @@ set(RE_CORE_SRC
 - **AllReduce TwoShot**：`RS → AG` 组合，多层 AllReduce。
 - **数据量覆盖**：Count 整除和不整除 Rank 数，单 Loop 和多 Loop。
 - **拓扑覆盖**：连续 Rank 和 Stride 型子通信域 Rank。
-- **src 回归**：`bash build.sh -u` 跑 UT，确保 src 既有用例不受影响。recursive\_executor自身UT计划覆盖`omnipipe_utils`、`data_ops`、`comm_planner`、`algo_desc`四组（`test/ut/recursive_executor/`）。目前仅交付`algo_desc`组UT，`omnipipe_utils`、`data_ops`、`comm_planner`三组待补齐。
+- **src 回归**：`bash build.sh -u` 跑 UT，确保 src 既有用例不受影响。recursive\_executor自身UT覆盖`omnipipe_utils`、`data_ops`、`data_transfer`、`comm_planner`、`algo_desc`五组（`test/ut/recursive_executor/`），五组均已交付。
 
 ## 风险评估
 

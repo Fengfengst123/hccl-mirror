@@ -26,12 +26,42 @@ struct NhrAllGatherSlicePair {
     std::vector<DataSlice>& dstSlices;
 };
 
+struct NhrStepParams {
+    u32 delta;
+    u32 sendToAlgRank;
+    u32 recvFromAlgRank;
+    u32 algRankStep;
+    u32 nSlices;
+};
+
+// BuildNhrStepSlices 的输入上下文（消除过多函数参数）
+struct NhrStepContext {
+    const DataParams& tempAlgParams;
+    const std::vector<u32>& ranks;
+    const std::vector<u32>& ranksForInputData;
+    u32 myRank;
+    u32 myAlgRank;
+    u32 rankSize;
+    u32 step;
+    u32 nSteps;
+    u32 tailRankId;
+    const NhrStepParams& params;
+    const std::vector<u32>& ranksForOutputData;
+    std::vector<u32>* lastStepRxRanks;
+};
+
+// BuildNhrStepSlices 的输出切片
+struct NhrStepOutput {
+    std::vector<DataSlice> txSrc;
+    std::vector<DataSlice> txDst;
+    std::vector<DataSlice> rxSrc;
+    std::vector<DataSlice> rxDst;
+};
+
 // lastStepRxRanks 输出末步 rx 收到的 rankIds（末步才到位，PostCopy 不能提前搬）
 HcclResult RunNhrAllGather(
     const DataParams& tempAlgParams, const std::vector<u32>& ranks, u32 myRank, std::vector<u32>& ranksForOutputData,
     std::vector<DataSlicesList>& txRxSlicesLists, std::vector<u32>* lastStepRxRanks = nullptr);
-
-bool CanReadLastStepToOutput(const DataParams& tempAlgParams);
 
 } // namespace ops_hccl
 
