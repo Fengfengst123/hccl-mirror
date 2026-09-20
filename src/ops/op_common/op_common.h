@@ -144,7 +144,7 @@ HcclResult GetAlgResDPU(
 
 HcclResult CheckCount(const u64 count);
 
-HcclResult CheckDataType(const HcclDataType dataType, bool needReduce);
+HcclResult CheckDataType(const HcclDataType dataType, bool needReduce, bool isReduceScatter = false);
 
 std::string GetSupportDataType(bool needReduce);
 

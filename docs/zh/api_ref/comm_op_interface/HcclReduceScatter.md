@@ -45,7 +45,7 @@ HcclResult HcclReduceScatter(void *sendBuf, void *recvBuf, uint64_t recvCount, H
 ### dataType说明
 
 <!-- npu="950" id10 -->
-- 针对Ascend 950PR&950DT系列产品，支持数据类型：int8、int16、int32、int64、uint64、float16、float32、float64、bfp16。
+- 针对Ascend 950PR&950DT系列产品，支持数据类型：int8、int16、int32、int64、uint64、float16、float32、float64、bfp16、hifloat8（当前仅在AIV展开模式下支持hifloat8类型）。
 <!-- end id10 -->
 <!-- npu="A3" id11 -->
 - 针对Atlas A3系列产品，支持数据类型：int8、int16、int32、int64、float16、float32、bfp16。
@@ -95,7 +95,7 @@ HcclResult HcclReduceScatter(void *sendBuf, void *recvBuf, uint64_t recvCount, H
 <!-- end id12 -->
 - 算子的输入输出地址（sendBuf与recvBuf）根据不同的数据类型，应满足如下对齐要求：
 
-  - int8按照1Byte地址对齐。
+  - int8、hifloat8按照1Byte地址对齐。
   - int16、float16、bfp16按照2Byte地址对齐。
   - int32、float32按照4Byte地址对齐。
   - int64、uint64、float64按照8Byte地址对齐。

@@ -52,7 +52,7 @@ HcclResult HcclReduceScatter(
     CHK_RET(HcclGetRankId(comm, &userRank));
     CHK_RET(HcomCheckUserRank(rankSize, userRank));
     CHK_RET(CheckCount(recvCount));
-    CHK_RET(CheckDataType(dataType, true));
+    CHK_RET(CheckDataType(dataType, true, true));
     CHK_RET(HcclGetCommName(comm, param.commName));
     // topoInfo的tag，所有相同的算子可以共享
     int ret = sprintf_s(param.tag, sizeof(param.tag), "ReduceScatter_%s", param.commName);
@@ -209,6 +209,13 @@ HcclResult ReduceScatterOutPlace(
         if (aivCacheHit) {
             return HCCL_SUCCESS;
         }
+    }
+
+    if (param.DataDes.dataType == HCCL_DATA_TYPE_HIF8 && param.engine != CommEngine::COMM_ENGINE_AIV) {
+        HCCL_ERROR(
+            "[%s]errNo[0x%016llx] data type[%s] only supported on aiv.", __func__, HCCL_ERROR_CODE(HCCL_E_NOT_SUPPORT),
+            GetDataTypeEnumStr(param.DataDes.dataType).c_str());
+        return HCCL_E_NOT_SUPPORT;
     }
 
     if (userRankSize == 1) {

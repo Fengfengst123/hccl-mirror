@@ -40,6 +40,7 @@ static std::vector<AivKernelInfo> g_reduceScatterAivKernelInfoList = {
     {"aiv_reduce_scatter_int8_t", HcclDataType::HCCL_DATA_TYPE_INT8},
     {"aiv_reduce_scatter_bfloat16_t", HcclDataType::HCCL_DATA_TYPE_BFP16},
     {"aiv_reduce_scatter_int64_t", HcclDataType::HCCL_DATA_TYPE_INT64},
+    {"aiv_reduce_scatter_hifloat8_t", HcclDataType::HCCL_DATA_TYPE_HIF8},
 };
 static std::string g_reduceScatterAivBinaryName = "hccl_aiv_reduce_scatter_op_910_95.o";
 

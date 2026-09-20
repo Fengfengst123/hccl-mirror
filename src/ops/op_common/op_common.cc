@@ -3180,7 +3180,7 @@ HcclResult CheckCount(const u64 count)
     return HCCL_SUCCESS;
 }
 
-HcclResult CheckDataType(const HcclDataType dataType, bool needReduce)
+HcclResult CheckDataType(const HcclDataType dataType, bool needReduce, bool isReduceScatter)
 {
     const std::vector<std::string> infoTitle({"ccl_op", "value", "parameter", "expect"});
     // 查询是否为合法的HcclDataType枚举值
@@ -3190,6 +3190,9 @@ HcclResult CheckDataType(const HcclDataType dataType, bool needReduce)
         static const std::set<HcclDataType> REDUCE_UNSUPPORTED
             = {HCCL_DATA_TYPE_UINT8, HCCL_DATA_TYPE_UINT16,  HCCL_DATA_TYPE_UINT32,  HCCL_DATA_TYPE_INT128,
                HCCL_DATA_TYPE_HIF8,  HCCL_DATA_TYPE_FP8E4M3, HCCL_DATA_TYPE_FP8E5M2, HCCL_DATA_TYPE_FP8E8M0};
+        if (isReduceScatter && GetExternalInputHcclAivMode() && dataType == HCCL_DATA_TYPE_HIF8) {
+            return HCCL_SUCCESS;
+        }
         if (notValid || REDUCE_UNSUPPORTED.find(dataType) != REDUCE_UNSUPPORTED.end()) {
             RPT_INPUT_ERR(
                 true, "EI0003", infoTitle,

@@ -17,6 +17,7 @@
 #include "aiv_reduce_scatter_mesh_1d_bigdata.h"
 #include "aiv_reduce_scatter_local_tree.h"
 #include "aiv_reduce_scatter_local_tree_corectrl.h"
+#include "aiv_reduce_scatter_mesh_1d_hif8.h" // hif8 两阶段升精度归约 kernel（搬运 hif8/本地升 fp32 归约）
 
 using namespace AscendC;
 
@@ -65,5 +66,12 @@ using namespace AscendC;
 
 // 定义各算子各数据类型Kernel入口
 AIV_ATOMIC_DATA_TYPE_DEF(AIV_REDUCE_SCATTER_KERNEL_BATCH_DEF);
+
+extern "C" __global__ __aicore__ void aiv_reduce_scatter_hifloat8_t(KERNEL_ARGS_DEF)
+{
+    AIV_INFO_HINT;
+    AivReduceScatterV2Mesh1DHif8<hifloat8_t>(KERNEL_ARGS_CALL);
+}
+EXPORT_AIV_META_INFO(aiv_reduce_scatter_hifloat8_t);
 
 #endif // AIV_REDUCE_SCATTER_OP_H
