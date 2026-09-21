@@ -3173,7 +3173,8 @@ HcclResult CheckCount(const u64 count)
 {
     if (UNLIKELY(count > SYS_MAX_COUNT)) {
         HCCL_ERROR(
-            "[Check][Count]errNo[0x%016llx] count[%llu] is invalid(bigger than MAX count[%llu])",
+            "[TaskExecStage][InvalidArgument][Check][Count]errNo[0x%016llx] "
+            "count[%llu] is invalid(bigger than MAX count[%llu])",
             HCCL_ERROR_CODE(HCCL_E_PARA), count, SYS_MAX_COUNT);
         return HCCL_E_PARA;
     }
@@ -3199,7 +3200,8 @@ HcclResult CheckDataType(const HcclDataType dataType, bool needReduce, bool isRe
                 std::vector<std::string>(
                     {"CheckDataType", GetDataTypeEnumStr(dataType), "dataType", GetSupportDataType(needReduce)}));
             HCCL_ERROR(
-                "[Check][DataType]errNo[0x%016llx] data type[%s] not supported, support range=[%s]",
+                "[TaskExecStage][InvalidArgument][Check][DataType]errNo[0x%016llx] "
+                "data type[%s] not supported, support range=[%s]",
                 HCCL_ERROR_CODE(HCCL_E_NOT_SUPPORT), GetDataTypeEnumStr(dataType).c_str(),
                 GetSupportDataType(needReduce).c_str());
             return HCCL_E_NOT_SUPPORT;
@@ -3213,7 +3215,8 @@ HcclResult CheckDataType(const HcclDataType dataType, bool needReduce, bool isRe
                     {"CheckDataType", GetDataTypeEnumStr(dataType), "dataType",
                      GetSupportDataType(needReduce).c_str()}));
             HCCL_ERROR(
-                "[Check][DataType]errNo[0x%016llx] data type[%s] not supported, support range=[%s]",
+                "[TaskExecStage][InvalidArgument][Check][DataType]errNo[0x%016llx] "
+                "data type[%s] not supported, support range=[%s]",
                 HCCL_ERROR_CODE(HCCL_E_NOT_SUPPORT), GetDataTypeEnumStr(dataType).c_str(),
                 GetSupportDataType(needReduce).c_str());
             return HCCL_E_NOT_SUPPORT;
@@ -3260,8 +3263,8 @@ HcclResult CheckReduceOp(const HcclDataType dataType, const HcclReduceOp op)
                 std::vector<std::string>(
                     {"CheckReduceDataType", GetDataTypeEnumStr(dataType), "dataType", GetReduceProdSupportDataType()}));
             HCCL_ERROR(
-                "[Check][ReduceOp][DataType]errNo[0x%016llx] reduceop is [%s] data type[%s] not supported, support "
-                "range=[%s]",
+                "[TaskExecStage][InvalidArgument][Check][ReduceOp][DataType]errNo[0x%016llx] "
+                "reduceop is [%s] data type[%s] not supported, support range=[%s]",
                 HCCL_ERROR_CODE(HCCL_E_NOT_SUPPORT), GetReduceOpEnumStr(op).c_str(),
                 GetDataTypeEnumStr(dataType).c_str(), GetReduceProdSupportDataType().c_str());
             return HCCL_E_NOT_SUPPORT;
