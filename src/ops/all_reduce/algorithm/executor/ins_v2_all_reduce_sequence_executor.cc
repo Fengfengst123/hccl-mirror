@@ -426,13 +426,13 @@ InsV2AllReduceSequenceExecutor<AlgTopoMatch, InsAlgTemplate0, InsAlgTemplate1, I
         tempAlgParamsStepOne.outputSliceStride = 0; // 没用到
 
         HCCL_INFO(
-            "[InsV2AllReduceSequenceExecutor] loop [%u] tempAlgParamsStepOne.inputSliceStride [%u],"
-            "tempAlgParamsStepOne.outputSliceStride [%u] tempAlgParamsStepOne.sliceSize [%u]",
+            "[InsV2AllReduceSequenceExecutor] loop [%llu] tempAlgParamsStepOne.inputSliceStride [%llu],"
+            "tempAlgParamsStepOne.outputSliceStride [%llu] tempAlgParamsStepOne.sliceSize [%llu]",
             loop, tempAlgParamsStepOne.inputSliceStride, tempAlgParamsStepOne.outputSliceStride,
             tempAlgParamsStepOne.sliceSize);
         HCCL_INFO(
-            "[InsV2AllReduceSequenceExecutor] loop [%u] tempAlgParamsStepOne.buffInfo.inBuffBaseOff [%u],"
-            "tempAlgParamsStepOne.buffInfo.outBuffBaseOff [%u]",
+            "[InsV2AllReduceSequenceExecutor] loop [%llu] tempAlgParamsStepOne.buffInfo.inBuffBaseOff [%llu],"
+            "tempAlgParamsStepOne.buffInfo.outBuffBaseOff [%llu]",
             loop, tempAlgParamsStepOne.buffInfo.inBuffBaseOff, tempAlgParamsStepOne.buffInfo.outBuffBaseOff);
         // 不需要重复
         tempAlgParamsStepOne.repeatNum = 1;
@@ -499,13 +499,13 @@ InsV2AllReduceSequenceExecutor<AlgTopoMatch, InsAlgTemplate0, InsAlgTemplate1, I
             tempAlgParamsStepThree.outputSliceStride = 0;
 
             HCCL_INFO(
-                "[InsV2AllReduceSequenceExecutor] loop [%u] tempAlgParamsStepThree.inputSliceStride [%u],"
-                "tempAlgParamsStepThree.outputSliceStride [%u] tempAlgParamsStepThree.sliceSize [%u]",
+                "[InsV2AllReduceSequenceExecutor] loop [%llu] tempAlgParamsStepThree.inputSliceStride [%llu],"
+                "tempAlgParamsStepThree.outputSliceStride [%llu] tempAlgParamsStepThree.sliceSize [%llu]",
                 loop, tempAlgParamsStepThree.inputSliceStride, tempAlgParamsStepThree.outputSliceStride,
                 tempAlgParamsStepThree.sliceSize);
             HCCL_INFO(
-                "[InsV2AllReduceSequenceExecutor] loop [%u] tempAlgParamsStepThree.buffInfo.inBuffBaseOff [%u],"
-                "tempAlgParamsStepThree.buffInfo.outBuffBaseOff [%u]",
+                "[InsV2AllReduceSequenceExecutor] loop [%llu] tempAlgParamsStepThree.buffInfo.inBuffBaseOff [%llu],"
+                "tempAlgParamsStepThree.buffInfo.outBuffBaseOff [%llu]",
                 loop, tempAlgParamsStepThree.buffInfo.inBuffBaseOff, tempAlgParamsStepThree.buffInfo.outBuffBaseOff);
 
             tempAlgParamsStepThree.repeatNum = 1;
@@ -532,13 +532,13 @@ InsV2AllReduceSequenceExecutor<AlgTopoMatch, InsAlgTemplate0, InsAlgTemplate1, I
         tempAlgParamsStepFour.outputSliceStride = 0;
 
         HCCL_INFO(
-            "[InsV2AllReduceSequenceExecutor] loop [%u] tempAlgParamsStepFour.inputSliceStride [%u],"
-            "tempAlgParamsStepFour.outputSliceStride [%u] tempAlgParamsStepFour.sliceSize [%u]",
+            "[InsV2AllReduceSequenceExecutor] loop [%llu] tempAlgParamsStepFour.inputSliceStride [%llu],"
+            "tempAlgParamsStepFour.outputSliceStride [%llu] tempAlgParamsStepFour.sliceSize [%llu]",
             loop, tempAlgParamsStepFour.inputSliceStride, tempAlgParamsStepFour.outputSliceStride,
             tempAlgParamsStepFour.sliceSize);
         HCCL_INFO(
-            "[InsV2AllReduceSequenceExecutor] loop [%u] tempAlgParamsStepFour.buffInfo.inBuffBaseOff [%u],"
-            "tempAlgParamsStepFour.buffInfo.outBuffBaseOff [%u]",
+            "[InsV2AllReduceSequenceExecutor] loop [%llu] tempAlgParamsStepFour.buffInfo.inBuffBaseOff [%llu],"
+            "tempAlgParamsStepFour.buffInfo.outBuffBaseOff [%llu]",
             loop, tempAlgParamsStepFour.buffInfo.inBuffBaseOff, tempAlgParamsStepFour.buffInfo.outBuffBaseOff);
 
         tempAlgParamsStepFour.repeatNum = 1;

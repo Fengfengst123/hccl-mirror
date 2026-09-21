@@ -338,6 +338,7 @@ HcclResult CcuAlgTemplateBase::PartitionChannelsFor2Die(
 
     if (is2Plus6) {
         kernelCount = MAX_KERNEL_NUM_2DIE;
+        fullmeshDieId = 0;
         if (!singleChByDie.empty()) {
             fullmeshDieId = singleChByDie.begin()->first;
             fillKernel(KERNEL_FULLMESH, singleChByDie.at(fullmeshDieId));

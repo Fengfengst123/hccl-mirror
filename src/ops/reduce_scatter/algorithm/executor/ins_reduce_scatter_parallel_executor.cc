@@ -52,6 +52,10 @@ std::vector<CostModelParam>
 InsReduceScatterParallelExecutor<AlgTopoMatch, InsAlgTemplate0, InsAlgTemplate1>::CalcCostCoeff(
     HcclComm comm, TopoInfoWithNetLayerDetails* topoInfo, const char* algName, const OpParam& param)
 {
+    if (topoInfo == nullptr) {
+        HCCL_ERROR("[InsReduceScatterParallelExecutor][CalcCostCoeff] topoInfo is nullptr.");
+        return std::vector<CostModelParam>();
+    }
     AlgHierarchyInfoForAllLevel algHierarchyInfo;
 #ifndef AICPU_COMPILE
     const AlgAttrs* attrs = AlgAttrsRegistry::Instance().Get(std::string(algName));

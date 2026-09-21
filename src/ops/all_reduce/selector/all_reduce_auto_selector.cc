@@ -41,6 +41,10 @@ SelectorStatus AllReduceAutoSelector::SelectCcuMsAlgo(
     const TopoInfoWithNetLayerDetails* topoInfo, const OpParam& opParam,
     const std::map<HcclCMDType, std::vector<HcclAlgoType>>& configAlgMap, std::string& selectAlgName) const
 {
+    if (topoInfo == nullptr) {
+        HCCL_DEBUG("[AllReduceAutoSelector] topoInfo is nullptr");
+        return SelectorStatus::NOT_MATCH;
+    }
     (void)configAlgMap;
     HCCL_DEBUG("[AllReduceAutoSelector][%s] start, topoInfo levelNum[%u]", __func__, topoInfo->topoLevelNums);
 
