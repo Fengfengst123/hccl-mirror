@@ -40,6 +40,8 @@ namespace ops_hccl {
 // 与 alltoall_auto_selector.cc 保持一致：4P 且 mesh 数等于 clos 数时走并发算法的卡数上限与数据量分界
 constexpr uint32_t CONCURRENT_RANK_LIMIT = 4;
 constexpr uint64_t BIG_DATA_SIZE_LIMIT = 512;
+// AllToAll MultiLink CCU算法最大支持的rank数(AllToAllV为A2AV_CCU_MAX_RANK_SIZE, 已放开到128)
+constexpr uint32_t A2A_CCU_MAX_RANK_SIZE = 64;
 
 template <typename AlgTopoMatch, typename InsAlgTemplate>
 InsV2AlltoAllVSoleExecutor<AlgTopoMatch, InsAlgTemplate>::InsV2AlltoAllVSoleExecutor()
@@ -646,7 +648,7 @@ REGISTER_EXEC_V2(
     HcclCMDType::HCCL_CMD_ALLTOALL, CcuSchedAllToAllSoleMeshMultiLink, InsV2AlltoAllVSoleExecutor, TopoMatchOneLevel,
     CcuTempAllToAllMesh1D2Die);
 REGISTER_ALG_ATTRS(CcuSchedAllToAllSoleMeshMultiLink, topo.minTopoLevelNum = TOPO_LEVEL_NUM_2;
-                   topo.maxSupportRankSize = CCU_SCHED_MAX_RANK_SIZE; topo.maxTopoLevelNum = TOPO_LEVEL_NUM_2;
+                   topo.maxSupportRankSize = A2A_CCU_MAX_RANK_SIZE; topo.maxTopoLevelNum = TOPO_LEVEL_NUM_2;
                    op.isSupportInplace = false);
 #endif // !HCCL_CANN_COMPAT_850
 REGISTER_EXEC_V2(

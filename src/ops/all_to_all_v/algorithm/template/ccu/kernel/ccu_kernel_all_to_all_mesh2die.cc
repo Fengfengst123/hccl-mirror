@@ -27,12 +27,16 @@ static CcuResult InitResource(AllToAllMesh2DieContext& ctx)
     }
     ctx.virRankSize = arg->channelCount + 1;
 
-    ctx.output.resize(ctx.virRankSize);
-    ctx.token.resize(ctx.virRankSize);
+    // resize默认构造会真实分配寄存器且无释放接口, handle被channel绑定值覆盖后成为孤儿寄存器;
+    // 改用reserve+push_back(prvalue move构造只拷handle, 不占寄存器), 仅末槽(localId)真实分配
+    ctx.output.reserve(ctx.virRankSize);
+    ctx.token.reserve(ctx.virRankSize);
     for (u64 id = 0; id < arg->channelCount; id++) {
-        ctx.output[id] = ccu::GetResByChannel<ccu::Variable>(arg->channels[id], OUTPUT_XN_ID);
-        ctx.token[id] = ccu::GetResByChannel<ccu::Variable>(arg->channels[id], TOKEN_XN_ID);
+        ctx.output.push_back(ccu::GetResByChannel<ccu::Variable>(arg->channels[id], OUTPUT_XN_ID));
+        ctx.token.push_back(ccu::GetResByChannel<ccu::Variable>(arg->channels[id], TOKEN_XN_ID));
     }
+    ctx.output.push_back(ccu::Variable{});
+    ctx.token.push_back(ccu::Variable{});
 
     ctx.logicRankSize = arg->withMyRank ? arg->channelCount + 1 : arg->channelCount;
 

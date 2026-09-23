@@ -41,13 +41,17 @@ static CcuResult InitResource(AllToAllVMesh1D2DieContext& ctx)
     CCU_CHK_RET(AllocGoResource(
         ctx.moConfig, ctx.moRes, ctx.resourceAllocated, CCU_MS_LOCAL_COPY_LOOP_COUNT, LOCAL_COPY_MS_PER_LOOP));
 
-    ctx.output.resize(arg->channelCount + 1);
-    ctx.token.resize(arg->channelCount + 1);
+    // resize默认构造会真实分配寄存器且无释放接口, handle被channel绑定值覆盖后成为孤儿寄存器;
+    // 改用reserve+push_back(prvalue move构造只拷handle, 不占寄存器), 仅localId槽真实分配
+    ctx.output.reserve(arg->channelCount + 1);
+    ctx.token.reserve(arg->channelCount + 1);
     for (uint32_t peerId = 0; peerId < arg->channelCount; peerId++) {
         HCCL_DEBUG("[CcuKernelAllToAllVMesh1D2Die] RankId[%u], PeerId[%u]", arg->rankId, peerId);
-        ctx.output[peerId] = ccu::GetResByChannel<ccu::Variable>(arg->channels[peerId], OUTPUT_XN_ID);
-        ctx.token[peerId] = ccu::GetResByChannel<ccu::Variable>(arg->channels[peerId], TOKEN_XN_ID);
+        ctx.output.push_back(ccu::GetResByChannel<ccu::Variable>(arg->channels[peerId], OUTPUT_XN_ID));
+        ctx.token.push_back(ccu::GetResByChannel<ccu::Variable>(arg->channels[peerId], TOKEN_XN_ID));
     }
+    ctx.output.push_back(ccu::Variable{});
+    ctx.token.push_back(ccu::Variable{});
 
     ctx.sendRecvInfo.resize(ctx.peerSize);
 
@@ -66,19 +70,29 @@ static CcuResult LoadArgs(AllToAllVMesh1D2DieContext& ctx)
     CCU_CHK_RET(ccu::LoadArg(ctx.output[ctx.localId], index++));
     CCU_CHK_RET(ccu::LoadArg(ctx.token[ctx.localId], index++));
 
-    CCU_CHK_RET(ccu::LoadArg(ctx.xnMaxTransportGoSize.addrOffset, index++));
-    CCU_CHK_RET(ccu::LoadArg(ctx.xnMaxTransportGoSize.loopParam, index++));
-    CCU_CHK_RET(ccu::LoadArg(ctx.xnMaxTransportGoSize.parallelParam, index++));
-    CCU_CHK_RET(ccu::LoadArg(ctx.xnMaxTransportGoSize.residual, index++));
+    // goSize仅被GroupCopy(自拷贝)路径消费, 远端Write路径只用sendTailSize/xnMaxTransportSize;
+    // withMyRank=false的CLOS kernel不分配不加载, host侧按同规则排布arg
+    if (ctx.arg->withMyRank) {
+        ctx.xnMaxTransportGoSize.reset(new GroupOpSizeVars());
+        CCU_CHK_RET(ccu::LoadArg(ctx.xnMaxTransportGoSize->addrOffset, index++));
+        CCU_CHK_RET(ccu::LoadArg(ctx.xnMaxTransportGoSize->loopParam, index++));
+        CCU_CHK_RET(ccu::LoadArg(ctx.xnMaxTransportGoSize->parallelParam, index++));
+        CCU_CHK_RET(ccu::LoadArg(ctx.xnMaxTransportGoSize->residual, index++));
+        // 自拷贝尾块的staging寄存器, 仅FULLMESH分配
+        ctx.curSendTailGoSize.reset(new GroupOpSizeVars());
+    }
 
     for (uint64_t peerId = 0; peerId < ctx.peerSize; peerId++) {
         CCU_CHK_RET(ccu::LoadArg(ctx.sendRecvInfo[peerId].sendOffset, index++));
         CCU_CHK_RET(ccu::LoadArg(ctx.sendRecvInfo[peerId].recvOffset, index++));
         CCU_CHK_RET(ccu::LoadArg(ctx.sendRecvInfo[peerId].sendTailSize, index++));
-        CCU_CHK_RET(ccu::LoadArg(ctx.sendRecvInfo[peerId].sendTailGoSize.addrOffset, index++));
-        CCU_CHK_RET(ccu::LoadArg(ctx.sendRecvInfo[peerId].sendTailGoSize.loopParam, index++));
-        CCU_CHK_RET(ccu::LoadArg(ctx.sendRecvInfo[peerId].sendTailGoSize.parallelParam, index++));
-        CCU_CHK_RET(ccu::LoadArg(ctx.sendRecvInfo[peerId].sendTailGoSize.residual, index++));
+        if (ctx.arg->withMyRank) {
+            ctx.sendRecvInfo[peerId].sendTailGoSize.reset(new GroupOpSizeVars());
+            CCU_CHK_RET(ccu::LoadArg(ctx.sendRecvInfo[peerId].sendTailGoSize->addrOffset, index++));
+            CCU_CHK_RET(ccu::LoadArg(ctx.sendRecvInfo[peerId].sendTailGoSize->loopParam, index++));
+            CCU_CHK_RET(ccu::LoadArg(ctx.sendRecvInfo[peerId].sendTailGoSize->parallelParam, index++));
+            CCU_CHK_RET(ccu::LoadArg(ctx.sendRecvInfo[peerId].sendTailGoSize->residual, index++));
+        }
         CCU_CHK_RET(ccu::LoadArg(ctx.sendRecvInfo[peerId].sendLoopNum, index++));
     }
 
@@ -128,12 +142,15 @@ static void CalcGroupSrcDst(AllToAllVMesh1D2DieContext& ctx)
     }
 
     if (arg->withMyRank) {
-        ctx.localSrc.addr = ctx.input;
-        ctx.localSrc.addr += ctx.sendRecvInfo[ctx.localId].sendOffset;
-        ctx.localSrc.token = ctx.token[ctx.localId];
-        ctx.localDst.addr = ctx.output[ctx.localId];
-        ctx.localDst.addr += ctx.sendRecvInfo[ctx.localId].recvOffset;
-        ctx.localDst.token = ctx.token[ctx.localId];
+        // 延迟分配, 详见ctx成员注释
+        ctx.localSrc.reset(new ccu::LocalAddr());
+        ctx.localDst.reset(new ccu::LocalAddr());
+        ctx.localSrc->addr = ctx.input;
+        ctx.localSrc->addr += ctx.sendRecvInfo[ctx.localId].sendOffset;
+        ctx.localSrc->token = ctx.token[ctx.localId];
+        ctx.localDst->addr = ctx.output[ctx.localId];
+        ctx.localDst->addr += ctx.sendRecvInfo[ctx.localId].recvOffset;
+        ctx.localDst->token = ctx.token[ctx.localId];
     }
 }
 
@@ -146,12 +163,14 @@ static CcuResult ProcessPeerStep(AllToAllVMesh1D2DieContext& ctx, uint32_t peerI
         CCU_IF(ctx.sendRecvInfo[peerId].sendLoopNum == UINT64_MAX - 1)
         {
             ctx.curSendTailSize = ctx.sendRecvInfo[peerId].sendTailSize;
-            ctx.curSendTailGoSize = ctx.sendRecvInfo[peerId].sendTailGoSize;
+            if (arg->withMyRank) {
+                *ctx.curSendTailGoSize = *ctx.sendRecvInfo[peerId].sendTailGoSize;
+            }
             CCU_IF(ctx.curSendTailSize == 0) { CCU_CHK_RET(ctx.eventGroup.Record(peerId)); }
             CCU_ELSE
             {
                 if (arg->withMyRank && peerId == ctx.localId) {
-                    GroupCopy(ctx, ctx.localDst, ctx.localSrc, ctx.curSendTailGoSize, GetCcuVersion());
+                    GroupCopy(ctx, *ctx.localDst, *ctx.localSrc, *ctx.curSendTailGoSize, GetCcuVersion());
                     CCU_CHK_RET(ctx.eventGroup.Record(peerId));
                 } else {
                     CCU_CHK_RET(ccu::Write(
@@ -164,10 +183,10 @@ static CcuResult ProcessPeerStep(AllToAllVMesh1D2DieContext& ctx, uint32_t peerI
         CCU_ELSE
         {
             if (arg->withMyRank && peerId == ctx.localId) {
-                GroupCopy(ctx, ctx.localDst, ctx.localSrc, ctx.xnMaxTransportGoSize, GetCcuVersion());
+                GroupCopy(ctx, *ctx.localDst, *ctx.localSrc, *ctx.xnMaxTransportGoSize, GetCcuVersion());
                 CCU_CHK_RET(ctx.eventGroup.Record(peerId));
-                ctx.localDst.addr += ctx.xnMaxTransportSize;
-                ctx.localSrc.addr += ctx.xnMaxTransportSize;
+                ctx.localDst->addr += ctx.xnMaxTransportSize;
+                ctx.localSrc->addr += ctx.xnMaxTransportSize;
             } else {
                 CCU_CHK_RET(ccu::Write(
                     arg->channels[peerId], ctx.dst[peerId], ctx.src[peerId], ctx.xnMaxTransportSize,

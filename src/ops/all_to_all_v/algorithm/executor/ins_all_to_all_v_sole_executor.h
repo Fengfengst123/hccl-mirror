@@ -21,7 +21,7 @@
 #include <type_traits>
 
 namespace ops_hccl {
-constexpr uint32_t A2AV_CCU_MAX_RANK_SIZE = 64;
+constexpr uint32_t A2AV_CCU_MAX_RANK_SIZE = 128;
 constexpr uint32_t A2AV_CCU_RANK_THRESHOLD = 4;
 
 template <typename AlgTopoMatch, typename InsAlgTemplate>

@@ -38,7 +38,8 @@ struct A2AVSingleSendRecvInfoCtx1D2Die {
     ccu::Variable sendOffset;
     ccu::Variable recvOffset;
     ccu::Variable sendTailSize;
-    GroupOpSizeVars sendTailGoSize;
+    // 延迟分配: goSize仅被GroupCopy(自拷贝)路径消费, CLOS kernel(withMyRank=false)不分配不占寄存器
+    std::unique_ptr<GroupOpSizeVars> sendTailGoSize;
     ccu::Variable sendLoopNum;
 };
 
@@ -54,8 +55,9 @@ struct AllToAllVMesh1D2DieContext : CcuKernelCtxBase {
     std::vector<ccu::Variable> output;
     std::vector<ccu::Variable> token;
 
-    ccu::LocalAddr localSrc;
-    ccu::LocalAddr localDst;
+    // 延迟分配: 仅FULLMESH(withMyRank=true)的自拷贝路径使用, CLOS kernel不占寄存器
+    std::unique_ptr<ccu::LocalAddr> localSrc;
+    std::unique_ptr<ccu::LocalAddr> localDst;
 
     std::vector<ccu::LocalAddr> src;
     std::vector<ccu::RemoteAddr> dst;
@@ -63,9 +65,10 @@ struct AllToAllVMesh1D2DieContext : CcuKernelCtxBase {
     ccu::Variable xnConst1;
     ccu::Variable completedRankCount;
     ccu::Variable xnMaxTransportSize;
-    GroupOpSizeVars xnMaxTransportGoSize;
+    // 延迟分配: 仅FULLMESH(withMyRank=true)分配, CLOS kernel不占寄存器
+    std::unique_ptr<GroupOpSizeVars> xnMaxTransportGoSize;
     ccu::Variable curSendTailSize;
-    GroupOpSizeVars curSendTailGoSize;
+    std::unique_ptr<GroupOpSizeVars> curSendTailGoSize;
     std::vector<A2AVSingleSendRecvInfoCtx1D2Die> sendRecvInfo;
 
     CcuEventGroup eventGroup;

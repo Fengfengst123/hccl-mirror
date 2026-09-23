@@ -412,15 +412,11 @@ REGISTER_EXEC_V2(
     HcclCMDType::HCCL_CMD_ALLTOALLV, CcuSchedAllToAllVSoleMeshMultiLink, InsAlltoAllVSoleExecutor, TopoMatchOneLevel,
     CcuTempAlltoAllVMesh1D2Die);
 REGISTER_ALG_ATTRS(
-    CcuSchedAllToAllVSoleMeshMultiLink, topo.maxSupportRankSize = CCU_SCHED_MAX_RANK_SIZE;
+    CcuSchedAllToAllVSoleMeshMultiLink, topo.maxSupportRankSize = A2AV_CCU_MAX_RANK_SIZE;
     topo.supportLevel0Topos = LEVEL0_TOPO_MESH_1D | LEVEL0_TOPO_MESH_1D_CLOS; topo.minTopoLevelNum = TOPO_LEVEL_NUM_2;
     topo.maxTopoLevelNum = TOPO_LEVEL_NUM_2; topo.topoCustomCheck = [](const TopoInfoWithNetLayerDetails* t) -> bool {
         return !t->level2UbRtp && t->level0Topo != Level0Shape::CLOS && t->userRankSize <= A2AV_CCU_MAX_RANK_SIZE
                && t->userRankSize > A2AV_CCU_RANK_THRESHOLD;
-    };
-    op.opCustomCheck = [](const OpParam& param, const TopoInfoWithNetLayerDetails* t) -> bool {
-        (void)t;
-        return param.all2AllDataDes.sendType != HcclDataType::HCCL_DATA_TYPE_INT8;
     };);
 REGISTER_EXEC_V2(
     HcclCMDType::HCCL_CMD_ALLTOALLV, CcuSchedAllToAllVSoleMeshMultiJetty, InsAlltoAllVSoleExecutor, TopoMatchOneLevel,

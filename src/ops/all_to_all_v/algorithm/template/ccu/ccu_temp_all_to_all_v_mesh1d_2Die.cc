@@ -201,6 +201,8 @@ void CcuTempAlltoAllVMesh1D2Die::FillRankGroupTaskArgs(
     uint32_t kernelIdx, const Mesh2DieCacheCtx& cacheCtx, const LoopGroupConfig& config,
     std::vector<uint64_t>& taskArgs)
 {
+    // 与kernel侧LoadArgs对齐: goSize仅FULLMESH(withMyRank=true, 自拷贝路径)排布, CLOS kernel跳过
+    bool withMyRank = kernelWithMyRank_[kernelIdx];
     for (auto peerId : cacheCtx.rankGroup[kernelIdx]) {
         uint64_t sendSize = localSendRecvInfo_.sendLength[peerId];
         uint64_t sendOffset = localSendRecvInfo_.sendOffset[peerId];
@@ -229,12 +231,14 @@ void CcuTempAlltoAllVMesh1D2Die::FillRankGroupTaskArgs(
         const uint64_t floorLoopNum = sendSize / UB_MAX_TRANS_SIZE;
         uint64_t sendLoopNum = UINT64_MAX - 1 - floorLoopNum;
         uint64_t sendTailSize = sendSize - floorLoopNum * UB_MAX_TRANS_SIZE;
-        auto sendTailGoSize = CalGoSize(sendTailSize, config, GetCcuVersion());
         taskArgs.push_back(sendOffset);
         taskArgs.push_back(recvOffset);
         taskArgs.push_back(sendTailSize);
-        for (auto val : sendTailGoSize) {
-            taskArgs.push_back(val);
+        if (withMyRank) {
+            auto sendTailGoSize = CalGoSize(sendTailSize, config, GetCcuVersion());
+            for (auto val : sendTailGoSize) {
+                taskArgs.push_back(val);
+            }
         }
         taskArgs.push_back(sendLoopNum);
 
@@ -292,8 +296,11 @@ HcclResult CcuTempAlltoAllVMesh1D2Die::KernelRun(
         taskArgs.push_back(inputAddr);
         taskArgs.push_back(outputAddr);
         taskArgs.push_back(token);
-        for (auto val : xnMaxTransportGoSize) {
-            taskArgs.push_back(val);
+        // 与kernel侧LoadArgs对齐: goSize仅FULLMESH排布
+        if (kernelWithMyRank_[i]) {
+            for (auto val : xnMaxTransportGoSize) {
+                taskArgs.push_back(val);
+            }
         }
 
         FillRankGroupTaskArgs(i, cacheCtx, config, taskArgs);
@@ -402,8 +409,12 @@ HcclResult CcuTempAlltoAllVMesh1D2Die::FastLaunch(const OpParam& param, const Te
         taskArgs.push_back(inputAddr);
         taskArgs.push_back(outputAddr);
         taskArgs.push_back(token);
-        for (uint32_t j = 0; j < CACHED_GO_SIZE_NUM; j++) {
-            taskArgs.push_back(args[CACHED_GO_SIZE_BASE + j]);
+        // 与kernel侧LoadArgs对齐: goSize仅FULLMESH(withMyRank=true)排布
+        bool withMyRank = kernelWithMyRank_[i];
+        if (withMyRank) {
+            for (uint32_t j = 0; j < CACHED_GO_SIZE_NUM; j++) {
+                taskArgs.push_back(args[CACHED_GO_SIZE_BASE + j]);
+            }
         }
 
         for (auto peerId : cacheCtx.rankGroup[i]) {
@@ -429,12 +440,14 @@ HcclResult CcuTempAlltoAllVMesh1D2Die::FastLaunch(const OpParam& param, const Te
             const uint64_t floorLoopNum = sendSize / UB_MAX_TRANS_SIZE;
             uint64_t sendLoopNum = UINT64_MAX - 1 - floorLoopNum;
             uint64_t sendTailSize = sendSize - floorLoopNum * UB_MAX_TRANS_SIZE;
-            auto sendTailGoSize = CalGoSize(sendTailSize, config, GetCcuVersion());
             taskArgs.push_back(sendOffset);
             taskArgs.push_back(recvOffset);
             taskArgs.push_back(sendTailSize);
-            for (auto val : sendTailGoSize) {
-                taskArgs.push_back(val);
+            if (withMyRank) {
+                auto sendTailGoSize = CalGoSize(sendTailSize, config, GetCcuVersion());
+                for (auto val : sendTailGoSize) {
+                    taskArgs.push_back(val);
+                }
             }
             taskArgs.push_back(sendLoopNum);
         }
