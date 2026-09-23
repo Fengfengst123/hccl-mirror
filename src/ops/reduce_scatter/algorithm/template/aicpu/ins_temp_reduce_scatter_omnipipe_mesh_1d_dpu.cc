@@ -33,7 +33,7 @@ HcclResult InsTempReduceScatterOmniPipeMesh1dDpu::CalcRes(
     resourceRequest.notifyNumOnMainThread = 0;
 
     std::vector<HcclChannelDesc> level0Channels;
-    CHK_RET(CalcChannelRequestMesh1D(comm, param, topoInfo, subCommRanks_, level0Channels));
+    CHK_RET(CalcChannelRequestMesh1DHighestHostRoce(comm, param, topoInfo, subCommRanks_, level0Channels));
     resourceRequest.channels.push_back(level0Channels);
     HCCL_INFO(
         "[InsTempReduceScatterOmniPipeMesh1dDpu][CalcRes]slaveThreadNum[%u] notifyNumPerThread[%u] "

@@ -36,6 +36,11 @@ constexpr double BW_OMNI_UBX_ROCE = 25;
 constexpr double BW_OMNI_UBX_AG_CLOS = 191;
 constexpr double BW_OMNI_UBX_RS_CLOS = 225;
 
+constexpr double BW_OMNI_INVALID = 1.0;
+constexpr double BW_OMNI_COMMON_ROCE = 25;
+constexpr double BW_OMNI_COMMON_AG_CLOS = 191;
+constexpr double BW_OMNI_COMMON_RS_CLOS = 224;
+
 // CostModel effective bandwidth calibrated with 1GiB data on 2D UBX OmniPipe.
 constexpr double BW_OMNI_UBX_2D_COST_AG_MESH = 92.049;
 constexpr double BW_OMNI_UBX_2D_COST_AG_CLOS = 150.847;

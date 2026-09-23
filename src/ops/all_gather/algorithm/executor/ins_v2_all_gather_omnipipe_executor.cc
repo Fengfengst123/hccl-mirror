@@ -33,7 +33,6 @@ constexpr u32 RANK_LEVEL_4 = 4;
 
 constexpr u32 MAX_RANK_NUM_FOR_CONCURRENT_ALGO = 4;
 constexpr u64 OMNI_PCIE_AG_DATA_SIZE = 4 * 1024 * 1024; // pcie/UBX机型并行与流水算法的数据量分界，与selector保持一致
-
 constexpr u32 DEVICE_NUM_PER_MODULE_8 = 8;
 template <typename AlgTopoMatch, typename InsAlgTemplate0, typename InsAlgTemplate1, typename InsAlgTemplate2>
 InsV2AllGatherOmniPipeExecutor<
@@ -94,12 +93,22 @@ InsV2AllGatherOmniPipeExecutor<AlgTopoMatch, InsAlgTemplate0, InsAlgTemplate1, I
         HCCL_INFO("[InsV2AllGatherOmniPipeExecutor][BuildSubCommAndTempMap] UBX specific optimization flags.");
         omniNeedSetStepNum_ = (subCommRanks1[0].size() == RANK_LEVEL_4) ? OmniNeedSetStepNum::OMNIPIPE_UBX_16P :
                                                                           OmniNeedSetStepNum::OMNIPIPE_DEFAULT;
-        omniUbxLastStepRead_ = true;
+        omniLastStepRead_ = true;
         if (subCommRanks2[0].size() > 1) {
-            omniUbxLastStepRead_ = false;
+            omniLastStepRead_ = false;
             omniNeedSetStepNum_ = OmniNeedSetStepNum::OMNIPIPE_UBX_32P;
         }
     }
+    if (topoInfo->level0Topo == Level0Shape::MESH_1D && !topoInfo->topLevelUboe) {
+        HCCL_INFO("[BuildSubCommAndTempMap] UBX MESH_1D 3-level OmniPipe config");
+        omniLastStepRead_ = true;
+        omniNeedSetStepNum_ = OmniNeedSetStepNum::OMNIPIPE_DEFAULT;
+        if (!subCommRanks2.empty() && subCommRanks2[0].size() > 1) {
+            omniNeedSetStepNum_ = OmniNeedSetStepNum::OMNIPIPE_UBX_32P;
+            omniLastStepRead_ = false;
+        }
+    }
+
     rankSizeLevel_[OMNIPIPE_LEVEL0] = subCommRanks0[0].size();
     rankSizeLevel_[OMNIPIPE_LEVEL1] = subCommRanks1[0].size();
     rankSizeLevel_[OMNIPIPE_LEVEL2] = subCommRanks2[0].size();
@@ -174,6 +183,11 @@ InsV2AllGatherOmniPipeExecutor<AlgTopoMatch, InsAlgTemplate0, InsAlgTemplate1, I
         }
     } else if (topoInfo->level0Topo == Level0Shape::MESH_1D_CLOS) {
         closBandwidth = BW_OMNI_UBX_AG_CLOS / OMNIPIPE_FIXED_UB_UTILIZATION;
+    } else if (topoInfo->level0Topo == Level0Shape::MESH_1D && !topoInfo->topLevelUboe) {
+        // 先给定一个超低带宽，使算法不会被优先选中
+        meshBandwidth = BW_OMNI_INVALID / OMNIPIPE_FIXED_UB_UTILIZATION;
+        closBandwidth = BW_OMNI_INVALID / OMNIPIPE_FIXED_UB_UTILIZATION;
+        thirdBandwidth = BW_OMNI_INVALID / OMNIPIPE_FIXED_UB_UTILIZATION;
     }
     double costMeshBandwidth = meshBandwidth;
     double costClosBandwidth = closBandwidth;
@@ -418,7 +432,8 @@ HcclResult InsV2AllGatherOmniPipeExecutor<AlgTopoMatch, InsAlgTemplate0, InsAlgT
         = {&subCommRanks0, &subCommRanks1, &subCommRanks2};
     CHK_RET(ClassifyOmniPipeChannelsByLevel(
         myRank_, resCtx.channels, subCommsByLevel, rankSizeLevel_, remoteRankToChannelInfo_));
-    if (resCtx.topoInfo.level0Topo == Level0Shape::MESH_1D_CLOS && !resCtx.topoInfo.level0PcieMix) {
+    if ((resCtx.topoInfo.level0Topo == Level0Shape::MESH_1D_CLOS && !resCtx.topoInfo.level0PcieMix)
+        || (resCtx.topoInfo.level0Topo == Level0Shape::MESH_1D && !resCtx.topoInfo.topLevelUboe)) {
         if (rankSizeLevel_[OMNIPIPE_LEVEL1] > 1) {
             tempMap[OMNIPIPE_LEVEL1]->SetchannelsPerRank(remoteRankToChannelInfo_[1]);
         }
@@ -467,6 +482,8 @@ InsV2AllGatherOmniPipeExecutor<AlgTopoMatch, InsAlgTemplate0, InsAlgTemplate1, I
         // UBX
     } else if (resCtx.topoInfo.level0Topo == Level0Shape::MESH_1D_CLOS) {
         bw_ag_l1 = BW_OMNI_UBX_AG_CLOS;
+    } else if (resCtx.topoInfo.level0Topo == Level0Shape::MESH_1D && !resCtx.topoInfo.topLevelUboe) {
+        bw_ag_l1 = BW_OMNI_COMMON_AG_CLOS;
     }
     std::vector<double> endpointAttrBw{bw_ag_l0, bw_ag_l1, bw_ag_l2};
 
@@ -630,10 +647,13 @@ InsV2AllGatherOmniPipeExecutor<AlgTopoMatch, InsAlgTemplate0, InsAlgTemplate1, I
                 tempAlgParamMap[OMNIPIPE_LEVEL2].processedDataCount = processedDataCount;
                 CHK_RET(PreSyncInterThreads(controlThread_, tempMainThreadsZ_, ntfIdxCtrlToTempZ_));
             }
+            bool hasXYThreads = !tempMainThreadsXY_.empty();
             for (int j = 0; j < level0StepCount; j++) {
-                CHK_RET(PreSyncInterThreads(controlThread_, tempMainThreadsXY_, ntfIdxCtrlToTempXY_));
+                if (hasXYThreads) {
+                    CHK_RET(PreSyncInterThreads(controlThread_, tempMainThreadsXY_, ntfIdxCtrlToTempXY_));
+                }
                 // 对称路径每一步都直接写入 user output，不使用末步读和 ccl scratch 中转。
-                if (omniUbxLastStepRead_ == true && j == level0StepCount - 1 && !param.supportSymmetricMemory) {
+                if (omniLastStepRead_ == true && j == level0StepCount - 1 && !param.supportSymmetricMemory) {
                     tempAlgParamMap[OMNIPIPE_LEVEL0].omniLastStepRead_ = true;
                     tempAlgParamMap[OMNIPIPE_LEVEL0].omniReadDstStepSliceInfo
                         = omniPipeSliceLocalcopyInfo.dataSliceLevel0[i * level0StepCount + j];
@@ -666,11 +686,13 @@ InsV2AllGatherOmniPipeExecutor<AlgTopoMatch, InsAlgTemplate0, InsAlgTemplate1, I
                 }
                 // UBX 普通内存路径从第二步开始回拷上一步接收的数据，并与当前通信步骤并行执行。
                 // 对称路径的上一步结果已经位于 user output，无需补做中间本地拷贝。
-                if (omniUbxLastStepRead_ && j != 0 && !param.supportSymmetricMemory) {
+                if (omniLastStepRead_ && j != 0 && !param.supportSymmetricMemory) {
                     CHK_RET(UbxLastStepLocalCopy(
                         param, omniPipeSliceInfo, omniPipeSliceLocalcopyInfo, tempAlgParamMap, processedDataCount, j));
                 }
-                CHK_RET(PostSyncInterThreads(controlThread_, tempMainThreadsXY_, ntfIdxTempToCtrlXY_));
+                if (hasXYThreads) {
+                    CHK_RET(PostSyncInterThreads(controlThread_, tempMainThreadsXY_, ntfIdxTempToCtrlXY_));
+                }
             }
             if (rankSizeLevel_[OMNIPIPE_LEVEL2] > 1) {
                 CHK_RET(tempMap[OMNIPIPE_LEVEL2]->KernelRun(
@@ -680,7 +702,7 @@ InsV2AllGatherOmniPipeExecutor<AlgTopoMatch, InsAlgTemplate0, InsAlgTemplate1, I
         }
         // 对称路径的数据已经位于 user output 对称窗口，仅普通路径需要执行最终回拷。
         if (!param.supportSymmetricMemory) {
-            if (omniUbxLastStepRead_) {
+            if (omniLastStepRead_) {
                 CHK_RET(UbxLocalCopy(
                     param, omniPipeSliceInfo, omniPipeSliceLocalcopyInfo, tempAlgParamMap, processedDataCount,
                     level0StepCount));
@@ -873,8 +895,11 @@ REGISTER_EXEC_V2_MULTI(
     HcclCMDType::HCCL_CMD_ALLGATHER, DpuAllGatherPipeLineMeshNHRNHR, InsV2AllGatherOmniPipeExecutor,
     TopoMatchThreeLevel, InsTempAllGatherOmniPipeMesh1D, InsTempAllGatherOmniPipeNHR, InsTempAllGatherOmniPipeNHRDPU);
 REGISTER_ALG_ATTRS(
-    DpuAllGatherPipeLineMeshNHRNHR, topo.supportLevel0Topos = LEVEL0_TOPO_MESH_1D_CLOS; topo.isHostDpuOnly = true;
-    topo.topoCustomCheck = [](const TopoInfoWithNetLayerDetails* topo) -> bool {
-        return !topo->level0PcieMix;
+    DpuAllGatherPipeLineMeshNHRNHR, topo.supportLevel0Topos = LEVEL0_TOPO_MESH_1D_CLOS | LEVEL0_TOPO_MESH_1D;
+    topo.isHostDpuOnly = true; topo.topoCustomCheck = [](const TopoInfoWithNetLayerDetails* topo) -> bool {
+        if (topo->level0Topo == Level0Shape::MESH_1D_CLOS) {
+            return !topo->level0PcieMix;
+        }
+        return topo->topoLevelNums == TOPO_LEVEL_NUM_3;
     });
 } // namespace ops_hccl

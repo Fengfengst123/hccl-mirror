@@ -119,6 +119,11 @@ InsV2ReduceScatterOmniPipeExecutor<AlgTopoMatch, InsAlgTemplate0, InsAlgTemplate
         }
     } else if (topoInfo->level0Topo == Level0Shape::MESH_1D_CLOS) {
         closBandwidth = BW_OMNI_UBX_RS_CLOS / OMNIPIPE_FIXED_UB_UTILIZATION;
+    } else if (topoInfo->level0Topo == Level0Shape::MESH_1D && !topoInfo->topLevelUboe) {
+        // 先给定一个超低带宽，使算法不会被优先选中
+        meshBandwidth = BW_OMNI_INVALID / OMNIPIPE_FIXED_UB_UTILIZATION;
+        closBandwidth = BW_OMNI_INVALID / OMNIPIPE_FIXED_UB_UTILIZATION;
+        thirdBandwidth = BW_OMNI_INVALID / OMNIPIPE_FIXED_UB_UTILIZATION;
     }
     double costMeshBandwidth = meshBandwidth;
     double costClosBandwidth = closBandwidth;
@@ -266,6 +271,15 @@ HcclResult InsV2ReduceScatterOmniPipeExecutor<AlgTopoMatch, InsAlgTemplate0, Ins
         omniNeedSetStepNum_ = (subCommRanks1[0].size() == RANK_SIZE_LEVEL_4) ? OmniNeedSetStepNum::OMNIPIPE_UBX_16P :
                                                                                OmniNeedSetStepNum::OMNIPIPE_DEFAULT;
         if (subCommRanks2[0].size() > 1) {
+            omniNeedSetStepNum_ = OmniNeedSetStepNum::OMNIPIPE_UBX_32P;
+        }
+    }
+    if (topoInfo->level0Topo == Level0Shape::MESH_1D && !topoInfo->topLevelUboe) {
+        HCCL_INFO("[BuildSubCommAndTempMap] UBX MESH_1D 3-level OmniPipe config");
+        omniNeedSetStepNum_ = (!subCommRanks1.empty() && subCommRanks1[0].size() == RANK_SIZE_LEVEL_4) ?
+                                  OmniNeedSetStepNum::OMNIPIPE_UBX_16P :
+                                  OmniNeedSetStepNum::OMNIPIPE_DEFAULT;
+        if (!subCommRanks2.empty() && subCommRanks2[0].size() > 1) {
             omniNeedSetStepNum_ = OmniNeedSetStepNum::OMNIPIPE_UBX_32P;
         }
     }
@@ -417,7 +431,8 @@ InsV2ReduceScatterOmniPipeExecutor<AlgTopoMatch, InsAlgTemplate0, InsAlgTemplate
     const std::vector<uint64_t> rankSizesByLevel = {rankSizeLevel0_, rankSizeLevel1_, rankSizeLevel2_};
     CHK_RET(ClassifyOmniPipeChannelsByLevel(
         myRank_, resCtx.channels, subCommsByLevel, rankSizesByLevel, remoteRankToChannelInfo_));
-    if (resCtx.topoInfo.level0Topo == Level0Shape::MESH_1D_CLOS && !resCtx.topoInfo.level0PcieMix) {
+    if ((resCtx.topoInfo.level0Topo == Level0Shape::MESH_1D_CLOS && !resCtx.topoInfo.level0PcieMix)
+        || (resCtx.topoInfo.level0Topo == Level0Shape::MESH_1D && !resCtx.topoInfo.topLevelUboe)) {
         if (rankSizeLevel1_ > 1) {
             CHK_RET(tempMap[OMNIPIPE_LEVEL1]->SetchannelsPerRank(remoteRankToChannelInfo_[1]));
         }
@@ -491,6 +506,8 @@ InsV2ReduceScatterOmniPipeExecutor<AlgTopoMatch, InsAlgTemplate0, InsAlgTemplate
         }
     } else if (resCtx.topoInfo.level0Topo == Level0Shape::MESH_1D_CLOS) {
         bw_rs_l1 = BW_OMNI_UBX_RS_CLOS;
+    } else if (resCtx.topoInfo.level0Topo == Level0Shape::MESH_1D && !resCtx.topoInfo.topLevelUboe) {
+        bw_rs_l1 = BW_OMNI_COMMON_RS_CLOS;
     }
 
     // 计算等价带宽
@@ -614,7 +631,12 @@ InsV2ReduceScatterOmniPipeExecutor<AlgTopoMatch, InsAlgTemplate0, InsAlgTemplate
         auto loopSize = currDataCount * dataTypeSize_;
         if (!param.supportSymmetricMemory) {
             // 本地拷贝前同步。level0 和 level1 不会同时退化为单 rank，因此复用 level0/1 线程组。
-            CHK_RET(PreSyncInterThreads(controlThread_, tempMainThreadsLevel01_, notifyIdxCtrlToTempLevel01_));
+            // localcopy前同步，优先使用01线程组，若01为空（仅level2场景）则使用level2线程组
+            if (!tempMainThreadsLevel01_.empty()) {
+                CHK_RET(PreSyncInterThreads(controlThread_, tempMainThreadsLevel01_, notifyIdxCtrlToTempLevel01_));
+            } else if (!tempMainThreadsLevel2_.empty()) {
+                CHK_RET(PreSyncInterThreads(controlThread_, tempMainThreadsLevel2_, notifyIdxCtrlToTempLevel2_));
+            }
             // 普通路径在每个 loop 前将所有 rank 的 user input 分片压紧到 ccl scratch。
             tempParamLocalcopy.buffInfo.inBuffType = BufferType::INPUT;
             tempParamLocalcopy.count = currDataCount;
@@ -628,12 +650,20 @@ InsV2ReduceScatterOmniPipeExecutor<AlgTopoMatch, InsAlgTemplate0, InsAlgTemplate
             if (rankSizeLevel0_ > 1) {
                 auto temp0 = std::dynamic_pointer_cast<InsAlgTemplate0>(tempMap.begin()->second);
                 CHK_RET(temp0->DoLocalCopy(tempParamLocalcopy, tempResMap.begin()->second.threads));
-            } else {
+            } else if (rankSizeLevel1_ > 1) {
                 auto temp1 = std::dynamic_pointer_cast<InsAlgTemplate1>(tempMap.begin()->second);
                 CHK_RET(temp1->DoLocalCopy(tempParamLocalcopy, tempResMap.begin()->second.threads));
+            } else {
+                auto temp2 = std::dynamic_pointer_cast<InsAlgTemplate2>(tempMap.begin()->second);
+                CHK_PTR_NULL(temp2);
+                CHK_RET(temp2->DoLocalCopy(tempParamLocalcopy, tempResMap.begin()->second.threads));
             }
             // 本地拷贝后同步。
-            CHK_RET(PostSyncInterThreads(controlThread_, tempMainThreadsLevel01_, notifyIdxTempToCtrlLevel01_));
+            if (!tempMainThreadsLevel01_.empty()) {
+                CHK_RET(PostSyncInterThreads(controlThread_, tempMainThreadsLevel01_, notifyIdxTempToCtrlLevel01_));
+            } else if (!tempMainThreadsLevel2_.empty()) {
+                CHK_RET(PostSyncInterThreads(controlThread_, tempMainThreadsLevel2_, notifyIdxTempToCtrlLevel2_));
+            }
         }
         // 对称路径的数据已位于 user input，无需执行 input 到 scratch 的头拷贝。
 
@@ -671,7 +701,9 @@ InsV2ReduceScatterOmniPipeExecutor<AlgTopoMatch, InsAlgTemplate0, InsAlgTemplate
             // 5.4 遍历当前 level2 步骤内的 level0/level1 通信步骤。
             for (int j = 0; j < level0StepCount; j++) {
                 // level0、1前同步
-                CHK_RET(PreSyncInterThreads(controlThread_, tempMainThreadsLevel01_, notifyIdxCtrlToTempLevel01_));
+                if (!tempMainThreadsLevel01_.empty()) {
+                    CHK_RET(PreSyncInterThreads(controlThread_, tempMainThreadsLevel01_, notifyIdxCtrlToTempLevel01_));
+                }
                 // 初始化并执行机内template任务
                 if (rankSizeLevel0_ > 1) {
                     HCCL_DEBUG(
@@ -696,7 +728,9 @@ InsV2ReduceScatterOmniPipeExecutor<AlgTopoMatch, InsAlgTemplate0, InsAlgTemplate
                         tempMap[1]->KernelRun(param, tempAlgParamMap[OMNIPIPE_LEVEL1], tempResMap[OMNIPIPE_LEVEL1]));
                 }
                 // level0、1尾同步
-                CHK_RET(PostSyncInterThreads(controlThread_, tempMainThreadsLevel01_, notifyIdxTempToCtrlLevel01_));
+                if (!tempMainThreadsLevel01_.empty()) {
+                    CHK_RET(PostSyncInterThreads(controlThread_, tempMainThreadsLevel01_, notifyIdxTempToCtrlLevel01_));
+                }
             }
             if (rankSizeLevel2_ > 1) {
                 // z轴尾同步
@@ -710,7 +744,11 @@ InsV2ReduceScatterOmniPipeExecutor<AlgTopoMatch, InsAlgTemplate0, InsAlgTemplate
             }
         }
         // 本地拷贝前同步。
-        CHK_RET(PreSyncInterThreads(controlThread_, tempMainThreadsLevel01_, notifyIdxCtrlToTempLevel01_));
+        if (!tempMainThreadsLevel01_.empty()) {
+            CHK_RET(PreSyncInterThreads(controlThread_, tempMainThreadsLevel01_, notifyIdxCtrlToTempLevel01_));
+        } else if (!tempMainThreadsLevel2_.empty()) {
+            CHK_RET(PreSyncInterThreads(controlThread_, tempMainThreadsLevel2_, notifyIdxCtrlToTempLevel2_));
+        }
         if (param.supportSymmetricMemory) {
             // 对称路径的归约结果位于 user input 的本 rank 分片：
             // myRank_ * dataCount_ + processedDataCount。这里只把当前 loop 结果搬到 user output。
@@ -731,13 +769,21 @@ InsV2ReduceScatterOmniPipeExecutor<AlgTopoMatch, InsAlgTemplate0, InsAlgTemplate
             if (rankSizeLevel0_ > 1) {
                 auto temp0 = std::dynamic_pointer_cast<InsAlgTemplate0>(tempMap.begin()->second);
                 CHK_RET(temp0->DoLocalCopy(tempParamLocalcopy, tempResMap.begin()->second.threads));
-            } else {
+            } else if (rankSizeLevel1_ > 1) {
                 auto temp1 = std::dynamic_pointer_cast<InsAlgTemplate1>(tempMap.begin()->second);
                 CHK_RET(temp1->DoLocalCopy(tempParamLocalcopy, tempResMap.begin()->second.threads));
+            } else {
+                auto temp2 = std::dynamic_pointer_cast<InsAlgTemplate2>(tempMap.begin()->second);
+                CHK_PTR_NULL(temp2);
+                CHK_RET(temp2->DoLocalCopy(tempParamLocalcopy, tempResMap.begin()->second.threads));
             }
         }
         // 本地拷贝后同步。
-        CHK_RET(PostSyncInterThreads(controlThread_, tempMainThreadsLevel01_, notifyIdxTempToCtrlLevel01_));
+        if (!tempMainThreadsLevel01_.empty()) {
+            CHK_RET(PostSyncInterThreads(controlThread_, tempMainThreadsLevel01_, notifyIdxTempToCtrlLevel01_));
+        } else if (!tempMainThreadsLevel2_.empty()) {
+            CHK_RET(PostSyncInterThreads(controlThread_, tempMainThreadsLevel2_, notifyIdxTempToCtrlLevel2_));
+        }
         processedDataCount += currDataCount;
     }
     HCCL_INFO(
@@ -778,10 +824,15 @@ REGISTER_EXEC_V2_MULTI(
     TopoMatchThreeLevel, InsTempReduceScatterOmniPipeMesh1D, InsTempReduceScatterOmniPipeNHR,
     InsTempReduceScatterOmniPipeMesh1dDpu);
 REGISTER_ALG_ATTRS(
-    DpuReduceScatterPipeLineMeshNHRMesh, topo.supportLevel0Topos = LEVEL0_TOPO_MESH_1D_CLOS;
+    DpuReduceScatterPipeLineMeshNHRMesh, topo.supportLevel0Topos = LEVEL0_TOPO_MESH_1D_CLOS | LEVEL0_TOPO_MESH_1D;
     topo.minTopoLevelNum = TOPO_LEVEL_NUM_2; topo.maxTopoLevelNum = TOPO_LEVEL_NUM_3; topo.isHostDpuOnly = true;
+    topo.topoCustomCheck = [](const TopoInfoWithNetLayerDetails* topo) -> bool {
+        if (topo->level0Topo == Level0Shape::MESH_1D_CLOS) {
+            return true;
+        }
+        return topo->topoLevelNums == TOPO_LEVEL_NUM_3;
+    };
     topo.topoPriorityCheck = [](const TopoInfoWithNetLayerDetails* topo) -> bool {
         return topo->level0Topo == Level0Shape::MESH_1D_CLOS && !topo->level0PcieMix;
     });
-
 } // namespace ops_hccl

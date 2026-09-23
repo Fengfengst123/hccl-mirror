@@ -559,20 +559,27 @@ void TopoModel::Create910DLinks(uint32_t srcRank, uint32_t dstRank)
     link.dstEndpointDesc = rankId2Endpoint_[dstRank];
     link.linkAttr.linkProtocol = CommProtocol::COMM_PROTOCOL_RESERVED;
 
-    // level2
-    link.linkAttr.linkProtocol = CommProtocol::COMM_PROTOCOL_UB_CTP;
+    // level2 跨超节点由Host DPU执行，DPU场景下为HOST/ROCE连接（与level1保持一致）
+    if (isDpuEnable) {
+        link.srcEndpointDesc.loc.locType = EndpointLocType::ENDPOINT_LOC_TYPE_HOST;
+        link.dstEndpointDesc.loc.locType = EndpointLocType::ENDPOINT_LOC_TYPE_HOST;
+    }
+    link.linkAttr.linkProtocol = isDpuEnable ? CommProtocol::COMM_PROTOCOL_ROCE : CommProtocol::COMM_PROTOCOL_UB_CTP;
     allLinkMap_[rankPair][NetLayerL2].push_back(link);
 
     // level1 同pod才有level1链路
     if (IsSamePod(srcRank, dstRank)) {
         // HostDPU场景下level1由DPU执行，ROCE连接两端都位于Host。
         // 非对称拓扑可能将同server的rank划入level1，因此这里不能只处理跨server链路。
-        if (isDpuEnable) {
+        // 注意：仅当level1本身就是最顶层（只有单个超节点，拓扑为2级）时才由Host DPU执行；
+        // 跨超节点(>1个pod)时最顶层是level2（Host DPU / RoCE），level1是device侧的UB CLOS。
+        bool dpuOnLevel1 = isDpuEnable && podId2RankList_.size() <= 1;
+        if (dpuOnLevel1) {
             link.srcEndpointDesc.loc.locType = EndpointLocType::ENDPOINT_LOC_TYPE_HOST;
             link.dstEndpointDesc.loc.locType = EndpointLocType::ENDPOINT_LOC_TYPE_HOST;
         }
         link.linkAttr.linkProtocol
-            = isDpuEnable ? CommProtocol::COMM_PROTOCOL_ROCE : CommProtocol::COMM_PROTOCOL_UB_CTP;
+            = dpuOnLevel1 ? CommProtocol::COMM_PROTOCOL_ROCE : CommProtocol::COMM_PROTOCOL_UBC_CTP;
         allLinkMap_[rankPair][NetLayerL1].push_back(link);
     }
 

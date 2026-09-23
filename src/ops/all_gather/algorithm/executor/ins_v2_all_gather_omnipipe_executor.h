@@ -106,7 +106,7 @@ private:
     AlgHierarchyInfoForAllLevel algHierarchyInfo_;
 
     OmniNeedSetStepNum omniNeedSetStepNum_ = OmniNeedSetStepNum::OMNIPIPE_DEFAULT;
-    bool omniUbxLastStepRead_ = false;
+    bool omniLastStepRead_ = false;
 };
 } // namespace ops_hccl
 #endif

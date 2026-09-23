@@ -66,7 +66,13 @@ HcclResult InsTempAllGatherNHR::CalcRes(
     if (isUBX) {
         CHK_RET(CalcChannelRequestNhrMultiJettyUbx(comm, param, topoInfo, subCommRanks_, level1Channels));
     } else {
-        CHK_RET(CalcChannelRequestNhr(comm, param, topoInfo, subCommRanks_, level1Channels));
+        std::vector<HcclChannelDesc> myChannelDescs;
+        CHK_RET(CalcChannelRequestNhr(comm, param, topoInfo, subCommRanks_, myChannelDescs));
+        for (auto channel : myChannelDescs) {
+            if (channel.channelProtocol != CommProtocol::COMM_PROTOCOL_ROCE) {
+                level1Channels.push_back(channel);
+            }
+        }
     }
     resourceRequest.channels.push_back(level1Channels);
     channelsPerRank_ = CalcChannelsPerRankMin(level1Channels);

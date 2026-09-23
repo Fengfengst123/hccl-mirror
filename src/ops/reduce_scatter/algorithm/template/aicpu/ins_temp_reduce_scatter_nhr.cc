@@ -73,7 +73,13 @@ HcclResult InsTempReduceScatterNHR::CalcRes(
     if (isUBX) {
         CHK_RET(CalcChannelRequestNhrMultiJettyUbx(comm, param, topoInfo, subCommRanks_, channels));
     } else {
-        CHK_RET(CalcChannelRequestNhr(comm, param, topoInfo, subCommRanks_, channels));
+        std::vector<HcclChannelDesc> myChannelDescs;
+        CHK_RET(CalcChannelRequestNhr(comm, param, topoInfo, subCommRanks_, myChannelDescs));
+        for (auto channel : myChannelDescs) {
+            if (channel.channelProtocol != CommProtocol::COMM_PROTOCOL_ROCE) {
+                channels.push_back(channel);
+            }
+        }
     }
     resourceRequest.channels.push_back(channels);
     u32 channelsPerRank = CalcChannelsPerRank(channels);

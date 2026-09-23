@@ -235,6 +235,19 @@ add_library(scatter_aicpu_kernel SHARED
     ${HCCL_DEV_BASE}/src/ops/all_gather/algorithm/template/aicpu/ins_temp_all_gather_mesh_1D_Z_axis_detour.cc
     ${HCCL_DEV_BASE}/src/ops/all_gather/algorithm/executor/ins_v2_all_gather_sequence_executor.cc
     ${HCCL_DEV_BASE}/src/ops/all_gather/algorithm/template/aicpu/ins_temp_all_gather_nhr_dpu.cc
+    ${HCCL_DEV_BASE}/src/ops/all_gather/algorithm/executor/ins_v2_all_gather_omnipipe_executor.cc
+    ${HCCL_DEV_BASE}/src/ops/all_gather/algorithm/template/aicpu/ins_temp_all_gather_omnipipe_mesh_1D.cc
+    ${HCCL_DEV_BASE}/src/ops/all_gather/algorithm/template/aicpu/ins_temp_all_gather_omnipipe_nhr.cc
+    ${HCCL_DEV_BASE}/src/ops/all_gather/algorithm/template/aicpu/ins_temp_all_gather_omnipipe_nhr_dpu.cc
+    ${HCCL_DEV_BASE}/src/ops/op_common/algorithm/template/omnipipe_template_utils.cc
+    ${HCCL_DEV_BASE}/src/ops/op_common/omnipipe_data_slice_calc.cc
+
+    ${HCCL_DEV_BASE}/src/ops/reduce_scatter/algorithm/executor/ins_v2_reduce_scatter_omnipipe_executor.cc
+    ${HCCL_DEV_BASE}/src/ops/reduce_scatter/algorithm/template/aicpu/ins_temp_reduce_scatter_omnipipe_mesh_1D.cc
+    ${HCCL_DEV_BASE}/src/ops/reduce_scatter/algorithm/template/aicpu/ins_temp_reduce_scatter_omnipipe_nhr.cc
+    ${HCCL_DEV_BASE}/src/ops/reduce_scatter/algorithm/template/aicpu/ins_temp_reduce_scatter_omnipipe_mesh_1d_dpu.cc
+
+    ${HCCL_DEV_BASE}/src/ops/all_reduce/algorithm/executor/ins_v2_all_reduce_omnipipe_executor.cc
 
     ${HCCL_DEV_BASE}/src/ops/all_reduce/algorithm/template/aicpu/ins_temp_all_gather_mesh_1D_intra.cc
     ${HCCL_DEV_BASE}/src/ops/all_reduce/algorithm/template/aicpu/ins_temp_all_gather_nhr_dpu_inter.cc
