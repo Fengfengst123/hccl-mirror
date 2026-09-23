@@ -55,7 +55,6 @@ public:
         localTagTensor = localFlagBuf.GetWithOffset<int32_t>(UB_FLAG_PAD_COUNT, FLAG_FIVE_OFFSET);
         pipe.InitBufPool(inOutPool, UB_MAX_DATA_SIZE);
         pipe.InitBufPool(reducePool, UB_MAX_DATA_SIZE, inOutPool);
-        pipe.InitBuffer(inOutQue, 1, UB_MAX_DATA_SIZE);
         if (useDoubleBuffer_) {
             inOutPool.InitBuffer(inOutQue, 2, UB_DB_DATA_BATCH_SIZE);
         } else {
@@ -102,7 +101,6 @@ public:
         localTagTensor = localFlagBuf.GetWithOffset<int32_t>(UB_FLAG_PAD_COUNT, FLAG_FIVE_OFFSET);
         pipe.InitBufPool(inOutPool, UB_MAX_DATA_SIZE);
         pipe.InitBufPool(reducePool, UB_MAX_DATA_SIZE, inOutPool);
-        pipe.InitBuffer(inOutQue, 1, UB_MAX_DATA_SIZE);
         if (useDoubleBuffer_) {
             inOutPool.InitBuffer(inOutQue, 2, UB_DB_DATA_BATCH_SIZE);
         } else {
@@ -133,8 +131,8 @@ public:
             CpGM2GM((__gm__ T*)dstOffset, (__gm__ T*)srcOffset, totalLen_);
             pipe_barrier(PIPE_ALL);
             Record(targetRank, rank_, curTag_);
-            inOutPool.Reset();
         }
+        inOutPool.Reset();
     }
 
     __aicore__ inline void LocalReduce()

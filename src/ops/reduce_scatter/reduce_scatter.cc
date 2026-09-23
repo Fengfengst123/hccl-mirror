@@ -217,6 +217,11 @@ HcclResult ReduceScatterOutPlace(
             GetDataTypeEnumStr(param.DataDes.dataType).c_str());
         return HCCL_E_NOT_SUPPORT;
     }
+    if (param.DataDes.dataType == HCCL_DATA_TYPE_HIF8) {
+        param.commOpExpansionMode = HcclOpExpansionMode::HCCL_OP_EXPANSION_AIV_ONLY;
+        CHK_RET(ApplyOpExpansionMode(param, HcclOpExpansionMode::HCCL_OP_EXPANSION_AIV_ONLY));
+        HCCL_DEBUG("[%s]Only AIV support hifloat8, commOpExpansionMode is set to AIV_ONLY.", __func__);
+    }
 
     if (userRankSize == 1) {
         HCCL_WARNING("[%s] ranksize == 1, enter SingleRankProc", __func__);
