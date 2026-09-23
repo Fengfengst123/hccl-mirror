@@ -12,11 +12,11 @@
 
 本样例支持以下产品，组网为单机8卡：
 
-- Ascend 950PR/Ascend 950DT
-- Atlas A3 训练系列产品/Atlas A3 推理系列产品
-- Atlas A2 训练系列产品
-- Atlas 训练系列产品
-- Atlas 推理系列产品
+- Ascend 950PR&950DT系列产品
+- Atlas A3系列产品
+- Atlas A2训练系列产品
+- Atlas训练系列产品
+- Atlas推理系列产品
 
 注意：本样例代码基于 TensorFlow 1.x 框架开发，不兼容 TensorFlow 2.x。推荐使用 TensorFlow 1.15.0 版本。
 

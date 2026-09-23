@@ -36,7 +36,7 @@
 
 本样例支持以下产品，组网为单机N卡（N>=2）：
 
-- Ascend 950PR/Ascend 950DT
+- Ascend 950PR&950DT系列产品
 
 ### 2. 安装 CANN Toolkit 开发套件包
 

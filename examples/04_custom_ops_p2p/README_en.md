@@ -43,8 +43,8 @@ This sample demonstrates how to develop Send and Recv point-to-point communicati
 
 This sample supports the following products in a single-server N-card configuration (N >= 2, even number):
 
-- Ascend 950PR/Ascend 950DT
-- Atlas A3 training products/Atlas A3 inference products
+- Ascend 950PR&950DT products
+- Atlas A3 products
 
 The following software dependencies are required for compiling this sample. Ensure that the version requirements are met:
 

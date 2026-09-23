@@ -36,7 +36,7 @@ This sample demonstrates how to develop a ReduceScatter custom communication ope
 
 This sample supports the following products in a single-server N-card configuration (N >= 2):
 
-- Ascend 950PR/Ascend 950DT
+- Ascend 950PR&950DT products
 
 ### 1.2 Install the CANN Toolkit Development Kit Package
 

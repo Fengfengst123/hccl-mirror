@@ -37,7 +37,7 @@ This sample demonstrates how to develop a ReduceScatter communication operator b
 
 This sample supports the following Ascend products in a UB-protocol Mesh interconnection configuration with N cards (N >= 2):
 
-- Ascend 950PR/Ascend 950DT
+- Ascend 950PR&950DT products
 
 The following software dependencies are required for compiling this sample. Ensure that the version requirements are met:
 

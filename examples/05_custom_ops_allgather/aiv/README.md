@@ -36,9 +36,9 @@
 
 本样例支持以下产品，组网为单机N卡（N>=2）：
 
-- Ascend 950PR/Ascend 950DT
-- Atlas A3 训练系列产品/Atlas A3 推理系列产品（仅支持超节点内通信场景）
-- Atlas A2 训练系列产品/Atlas A2 推理系列产品（仅支持单机通信场景）
+- Ascend 950PR&950DT系列产品
+- Atlas A3系列产品（仅支持超节点内通信场景）
+- Atlas A2系列产品（仅支持单机通信场景）
 
 ### 2. 安装 CANN Toolkit 开发套件包
 

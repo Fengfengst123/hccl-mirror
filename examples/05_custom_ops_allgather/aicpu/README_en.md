@@ -44,7 +44,7 @@ This sample demonstrates how to develop an AllGather communication operator base
 
 This sample supports the following Ascend products in a single-server N-card configuration (N >= 2):
 
-- Ascend 950PR/Ascend 950DT
+- Ascend 950PR&950DT products
 
 The following software dependencies are required for compiling this sample. Ensure that the version requirements are met:
 
