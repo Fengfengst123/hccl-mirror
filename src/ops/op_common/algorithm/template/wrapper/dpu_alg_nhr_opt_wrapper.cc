@@ -151,15 +151,7 @@ HcclResult DpuBatchTransfer(std::vector<DpuTransferCtx>& pairs)
         }
     }
 
-    // ====== Phase 3: 后同步 — 仅实际有数据时 Record/Wait/Fence ======
-    for (auto& p : pairs) {
-        if (p.hasRecv()) {
-            for (u32 i = 0; i < p.rxSrcSlices.size(); i++) {
-                CHK_RET(static_cast<HcclResult>(
-                    HcommChannelNotifyWaitOnThread(0, p.rxCh->handle, NOTIFY_IDX_DATA_SIGNAL, execTimeout)));
-            }
-        }
-    }
+    // ====== Phase 3: 后同步 — Drain/Fence → NotifyWait(DATA_SIGNAL) ======
     // Drain：发送通道 + 接收通道（去重，samePeer 时仅一次）
     for (auto& p : pairs) {
         bool txDrained = false;
@@ -172,6 +164,14 @@ HcclResult DpuBatchTransfer(std::vector<DpuTransferCtx>& pairs)
         }
     }
     CHK_RET(static_cast<HcclResult>(HcommFenceOnThread(0)));
+    for (auto& p : pairs) {
+        if (p.hasRecv()) {
+            for (u32 i = 0; i < p.rxSrcSlices.size(); i++) {
+                CHK_RET(static_cast<HcclResult>(
+                    HcommChannelNotifyWaitOnThread(0, p.rxCh->handle, NOTIFY_IDX_DATA_SIGNAL, execTimeout)));
+            }
+        }
+    }
 #endif
     return HCCL_SUCCESS;
 }

@@ -70,15 +70,17 @@ HcclResult SendRecvWrite(const SendRecvInfo& sendRecvInfo)
         void* src = static_cast<void*>(static_cast<s8*>(srcSlice.addr_) + srcSlice.offset_);
         CHK_RET(static_cast<HcclResult>(
             HcommWriteWithNotifyNbiOnThread(0, sendChannel.handle, dst, src, srcSlice.size_, NOTIFY_IDX_DATA_SIGNAL)));
-        CHK_RET(static_cast<HcclResult>(
-            HcommChannelNotifyWaitOnThread(0, recvChannel.handle, NOTIFY_IDX_DATA_SIGNAL, execTimeout)));
     }
     // 写完之后做后同步告诉对面写完了
     CHK_RET(static_cast<HcclResult>(HcommChannelNotifyRecordOnThread(0, sendChannel.handle, NOTIFY_IDX_FIN_ACK)));
-    CHK_RET(static_cast<HcclResult>(
-        HcommChannelNotifyWaitOnThread(0, recvChannel.handle, NOTIFY_IDX_FIN_ACK, execTimeout)));
     CHK_RET(HcommChannelDrainOnThreadWithCompat(0, sendChannel.handle));
     CHK_RET(static_cast<HcclResult>(HcommFenceOnThread(0)));
+    for (int i = 0; i < repeatNum; i++) {
+        CHK_RET(static_cast<HcclResult>(
+            HcommChannelNotifyWaitOnThread(0, recvChannel.handle, NOTIFY_IDX_DATA_SIGNAL, execTimeout)));
+    }
+    CHK_RET(static_cast<HcclResult>(
+        HcommChannelNotifyWaitOnThread(0, recvChannel.handle, NOTIFY_IDX_FIN_ACK, execTimeout)));
 #endif
     return HCCL_SUCCESS;
 }
@@ -101,14 +103,16 @@ HcclResult SendWrite(const DataInfo& sendInfo)
         void* src = static_cast<void*>(static_cast<s8*>(srcSlice.addr_) + srcSlice.offset_);
         CHK_RET(static_cast<HcclResult>(
             HcommWriteWithNotifyNbiOnThread(0, sendChannel.handle, dst, src, srcSlice.size_, NOTIFY_IDX_DATA_SIGNAL)));
+    }
+    CHK_RET(static_cast<HcclResult>(HcommChannelNotifyRecordOnThread(0, sendChannel.handle, NOTIFY_IDX_FIN_ACK)));
+    CHK_RET(HcommChannelDrainOnThreadWithCompat(0, sendChannel.handle));
+    CHK_RET(static_cast<HcclResult>(HcommFenceOnThread(0)));
+    for (int i = 0; i < sliceNum; i++) {
         CHK_RET(static_cast<HcclResult>(
             HcommChannelNotifyWaitOnThread(0, sendChannel.handle, NOTIFY_IDX_DATA_SIGNAL, execTimeout)));
     }
-    CHK_RET(static_cast<HcclResult>(HcommChannelNotifyRecordOnThread(0, sendChannel.handle, NOTIFY_IDX_FIN_ACK)));
     CHK_RET(static_cast<HcclResult>(
         HcommChannelNotifyWaitOnThread(0, sendChannel.handle, NOTIFY_IDX_FIN_ACK, execTimeout)));
-    CHK_RET(HcommChannelDrainOnThreadWithCompat(0, sendChannel.handle));
-    CHK_RET(static_cast<HcclResult>(HcommFenceOnThread(0)));
 #endif
     return HCCL_SUCCESS;
 }
