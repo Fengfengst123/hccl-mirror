@@ -16,12 +16,10 @@ namespace ops_hccl {
 
 namespace {
     // 校验 level 对称并取维度：GLOBAL 看 instList 是否全等；LOCAL 视为对称
-    HcclResult ValidateLevelAndCalcDim(
-        u32 levelIdx, const std::vector<PhysicalLevelInfo>& physicalLevels, bool& symmetricOut, u32& dim)
+    HcclResult ValidateLevelAndCalcDim(const PhysicalLevelInfo& level, bool& symmetricOut, u32& dim)
     {
-        const PhysicalLevelInfo& level = physicalLevels[levelIdx];
         if (level.view == PhysicalLevelView::LOCAL) {
-            // LOCAL 无全局 instList，对称性由其上级 netLayer 层判定
+            // LOCAL 仅包含当前实例，无全局分区信息；按当前实例计算维度，本函数不判断跨实例对称性
             dim = static_cast<u32>(level.localRanks.size());
             symmetricOut = true;
             return HcclResult::HCCL_SUCCESS;
@@ -35,31 +33,49 @@ namespace {
         return HcclResult::HCCL_SUCCESS;
     }
 
-    // ThreeLevel 不支持非对称：p_0/p_1 任一非对称即 not support；维度 d0/d1/d2
+    // 计算 ThreeLevel 维度：对称场景维持原逻辑；Layer1 非对称时按 GCD 构造虚拟 POD
     HcclResult CalcDimsAndCheckSymmetry(
-        const std::vector<PhysicalLevelInfo>& physicalLevels, u32 phys0, u32 phys1, u32 userRankSize, u32 myRank,
-        u32& d0, u32& d1, u32& d2)
+        const TopoInfoWithNetLayerDetails& topoInfo, u32 phys0, u32 phys1, u32& d0, u32& d1, u32& d2)
     {
+        const auto& physicalLevels = topoInfo.physicalLevels;
+        const u32 userRankSize = topoInfo.userRankSize;
+        const u32 myRank = topoInfo.userRank;
         u32 level1TotalSize = 0;
         bool sym0 = false;
         bool sym1 = false;
         HcclResult ret = HCCL_SUCCESS;
-        ret = ValidateLevelAndCalcDim(phys0, physicalLevels, sym0, d0);
+        ret = ValidateLevelAndCalcDim(physicalLevels[phys0], sym0, d0);
         CHK_PRT_RET(
             ret != HCCL_SUCCESS,
             HCCL_INFO("[TopoMatchThreeLevel] ValidateLevelAndCalcDim level0 failed: hcclRet -> %d", ret),
             HcclResult::HCCL_E_NOT_SUPPORT);
-        ret = ValidateLevelAndCalcDim(phys1, physicalLevels, sym1, level1TotalSize);
+        ret = ValidateLevelAndCalcDim(physicalLevels[phys1], sym1, level1TotalSize);
         CHK_PRT_RET(
             ret != HCCL_SUCCESS,
             HCCL_INFO("[TopoMatchThreeLevel] ValidateLevelAndCalcDim level1 failed: hcclRet -> %d", ret),
             HcclResult::HCCL_E_NOT_SUPPORT);
-        if (!sym0 || !sym1) {
-            HCCL_INFO(
-                "[TopoMatchThreeLevel] Rank [%u], asymmetric detected (sym0[%d] sym1[%d]), not support.", myRank,
-                static_cast<int32_t>(sym0), static_cast<int32_t>(sym1));
+        if (!sym0) {
+            HCCL_INFO("[TopoMatchThreeLevel] Rank [%u], asymmetric level0 detected, not support.", myRank);
             return HcclResult::HCCL_E_NOT_SUPPORT;
         }
+
+        if (!sym1) {
+            const PhysicalLevelInfo& level1 = physicalLevels[phys1];
+            // GCD 表示每个虚拟 POD 包含的 rank 数；虚拟 POD 必须由完整 Server 组成，且通信域可被整除
+            u32 gcdRankSize = CalcGcd(level1.instSizeListByLayer);
+            if (d0 == 0 || gcdRankSize < d0 || gcdRankSize % d0 != 0 || userRankSize % gcdRankSize != 0) {
+                HCCL_INFO(
+                    "[TopoMatchThreeLevel] Rank [%u], invalid Layer1 GCD split, gcdRankSize[%u], d0[%u], "
+                    "userRankSize[%u].",
+                    myRank, gcdRankSize, d0, userRankSize);
+                return HcclResult::HCCL_E_NOT_SUPPORT;
+            }
+            level1TotalSize = gcdRankSize;
+            HCCL_INFO(
+                "[TopoMatchThreeLevel] Rank [%u], Layer1 asymmetric GCD split, gcdRankSize[%u], virtualPodNum[%u].",
+                myRank, gcdRankSize, userRankSize / gcdRankSize);
+        }
+
         if (d0 == 0 || level1TotalSize == 0 || level1TotalSize % d0 != 0) {
             HCCL_INFO(
                 "[TopoMatchThreeLevel] Rank [%u], level1TotalSize[%u] not divisible by d0[%u].", myRank,
@@ -110,16 +126,16 @@ HcclResult TopoMatchThreeLevel::MatchTopo(
     u32 phys0 = effIdx[pIndices[0]];
     u32 phys1 = effIdx[pIndices[1]];
 
-    // 非对称判定 + 维度计算（ThreeLevel 不支持非对称）
+    // 对称性判定 + 维度计算（Layer1 非对称按 GCD 划分虚拟 POD）
     u32 d0 = 0;
     u32 d1 = 0;
     u32 d2 = 0;
-    ret = CalcDimsAndCheckSymmetry(physicalLevels, phys0, phys1, userRankSize, myRank, d0, d1, d2);
+    ret = CalcDimsAndCheckSymmetry(*topoInfo, phys0, phys1, d0, d1, d2);
     CHK_PRT_RET(
         ret != HCCL_SUCCESS, HCCL_INFO("[TopoMatchThreeLevel] CalcDimsAndCheckSymmetry failed: hcclRet -> %d", ret),
         HcclResult::HCCL_E_NOT_SUPPORT);
 
-    // 构造 infos；level1 代表环须落在 myRank 所在 level1 instance 内，故 offset 取 instance 基址 + 层内偏移
+    // 构造 infos；level1 代表环须落在 myRank 所在的物理/虚拟 level1 instance 内
     std::vector<u32> group0 = physicalLevels[phys0].localRanks;
     u32 level1Base = (myRank / (d0 * d1)) * (d0 * d1);
     std::vector<u32> group1 = BuildRepresentativeGroup(d0, d1, level1Base + myRank % d0);

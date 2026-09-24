@@ -810,7 +810,7 @@ REGISTER_ALG_ATTRS(
     AicpuReduceScatterPipeLineMeshNHRMesh, topo.minTopoLevelNum = TOPO_LEVEL_NUM_3;
     topo.maxTopoLevelNum = TOPO_LEVEL_NUM_3; op.isSupportProd = false; op.unsupportedDataTypes = UNSUPPORTED_64BIT;
     topo.topoCustomCheck = [](const TopoInfoWithNetLayerDetails* topo) -> bool {
-        return topo->topLevelUboe && (topo->level0Symmetric && topo->level1Symmetric) && topo->deviceNumPerModule == 8;
+        return topo->topLevelUboe && topo->level0Symmetric && topo->deviceNumPerModule == 8;
     });
 // 3级算法: HostDPU 场景，L2 使用 DPU 专用模板
 REGISTER_EXEC_V2_MULTI(

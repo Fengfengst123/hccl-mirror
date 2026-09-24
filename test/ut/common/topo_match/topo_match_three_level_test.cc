@@ -110,19 +110,143 @@ TEST_F(TopoMatchThreeLevelTest, AsymmetricLevel0)
     ASSERT_EQ(matcher_.MatchTopo(&topo, info, profile), HcclResult::HCCL_E_NOT_SUPPORT);
 }
 
-// H5: 非对称 level1 → NOT_SUPPORT
-TEST_F(TopoMatchThreeLevelTest, AsymmetricLevel1)
+// A5 Layer0对称、Layer1非对称：[4][2]x8P按GCD=16划分为3个虚拟POD
+TEST_F(TopoMatchThreeLevelTest, A5Layer1AsymmetricGcdSubgroup)
 {
     auto topo = MakeTopoInfo(
-        2, 32,
+        24, 48,
         {
-            MakeLevel(Range(8), PhysicalLevelView::GLOBAL, {8, 8, 8, 8}),
-            MakeLevel(Range(24), PhysicalLevelView::GLOBAL, {16, 8}),
+            MakeLevel(RangeFrom(24, 8), PhysicalLevelView::GLOBAL, {8, 8, 8, 8, 8, 8}),
+            MakeLevel(Range(32), PhysicalLevelView::GLOBAL, {32, 16}),
+            MakeLevel(Range(48), PhysicalLevelView::GLOBAL, {48}),
+        });
+    const auto level1LocalRanks = topo.physicalLevels[1].localRanks;
+    const auto level1InstSizes = topo.physicalLevels[1].instSizeListByLayer;
+
+    AlgAttrs profile = MakeProfile({AlgoType::MESH, AlgoType::NHR, AlgoType::NHR});
+    AlgHierarchyInfoForAllLevel info;
+    ASSERT_EQ(matcher_.MatchTopo(&topo, info, profile), HcclResult::HCCL_SUCCESS);
+    ASSERT_EQ(info.infos.size(), 3u);
+    EXPECT_EQ(info.infos[0][0], RangeFrom(24, 8));
+    EXPECT_EQ(info.infos[1][0], (std::vector<u32>{16, 24}));
+    EXPECT_EQ(info.infos[2][0], (std::vector<u32>{8, 24, 40}));
+    EXPECT_EQ(topo.physicalLevels[1].localRanks, level1LocalRanks);
+    EXPECT_EQ(topo.physicalLevels[1].instSizeListByLayer, level1InstSizes);
+}
+
+// rank位于较小物理POD时，仍映射到正确的虚拟POD
+TEST_F(TopoMatchThreeLevelTest, A5Layer1AsymmetricGcdSubgroupInSmallPod)
+{
+    auto topo = MakeTopoInfo(
+        40, 48,
+        {
+            MakeLevel(RangeFrom(40, 8), PhysicalLevelView::GLOBAL, {8, 8, 8, 8, 8, 8}),
+            MakeLevel(RangeFrom(32, 16), PhysicalLevelView::GLOBAL, {32, 16}),
+            MakeLevel(Range(48), PhysicalLevelView::GLOBAL, {48}),
+        });
+    AlgAttrs profile = MakeProfile({AlgoType::MESH, AlgoType::NHR, AlgoType::NHR});
+    AlgHierarchyInfoForAllLevel info;
+    ASSERT_EQ(matcher_.MatchTopo(&topo, info, profile), HcclResult::HCCL_SUCCESS);
+    ASSERT_EQ(info.infos.size(), 3u);
+    EXPECT_EQ(info.infos[0][0], RangeFrom(40, 8));
+    EXPECT_EQ(info.infos[1][0], (std::vector<u32>{32, 40}));
+    EXPECT_EQ(info.infos[2][0], (std::vector<u32>{8, 24, 40}));
+}
+
+// A5 Layer1 GCD等于单Server大小：[3][2]x8P得到d0=8、d1=1、d2=5
+TEST_F(TopoMatchThreeLevelTest, A5Layer1AsymmetricGcdEqualsServerSize)
+{
+    auto topo = MakeTopoInfo(
+        20, 40,
+        {
+            MakeLevel(RangeFrom(16, 8), PhysicalLevelView::GLOBAL, {8, 8, 8, 8, 8}),
+            MakeLevel(Range(24), PhysicalLevelView::GLOBAL, {24, 16}),
+            MakeLevel(Range(40), PhysicalLevelView::GLOBAL, {40}),
+        });
+    AlgAttrs profile = MakeProfile({AlgoType::MESH, AlgoType::NHR, AlgoType::NHR});
+    AlgHierarchyInfoForAllLevel info;
+    ASSERT_EQ(matcher_.MatchTopo(&topo, info, profile), HcclResult::HCCL_SUCCESS);
+    ASSERT_EQ(info.infos.size(), 3u);
+    EXPECT_EQ(info.infos[0][0], RangeFrom(16, 8));
+    EXPECT_EQ(info.infos[1][0], (std::vector<u32>{20}));
+    EXPECT_EQ(info.infos[2][0], (std::vector<u32>{4, 12, 20, 28, 36}));
+}
+
+// LOCAL视图没有全局inst list，保持现有语义：按localRanks.size()计算，不进入GCD路径
+TEST_F(TopoMatchThreeLevelTest, LocalLevel1UsesLocalDimensionWithoutGcd)
+{
+    auto topo = MakeTopoInfo(
+        20, 32,
+        {
+            MakeLevel(RangeFrom(16, 8), PhysicalLevelView::GLOBAL, {8, 8, 8, 8}),
+            MakeLevel(RangeFrom(16, 16), PhysicalLevelView::LOCAL),
             MakeLevel(Range(32), PhysicalLevelView::GLOBAL, {32}),
         });
     AlgAttrs profile = MakeProfile({AlgoType::MESH, AlgoType::NHR, AlgoType::NHR});
     AlgHierarchyInfoForAllLevel info;
-    ASSERT_EQ(matcher_.MatchTopo(&topo, info, profile), HcclResult::HCCL_E_NOT_SUPPORT);
+    ASSERT_EQ(matcher_.MatchTopo(&topo, info, profile), HcclResult::HCCL_SUCCESS);
+    ASSERT_EQ(info.infos.size(), 3u);
+    EXPECT_EQ(info.infos[0][0], RangeFrom(16, 8));
+    EXPECT_EQ(info.infos[1][0], (std::vector<u32>{20, 28}));
+    EXPECT_EQ(info.infos[2][0], (std::vector<u32>{4, 20}));
+}
+
+// LOCAL Layer0按当前实例计算维度，不依赖topoInfo.level0Symmetric判断对称性
+TEST_F(TopoMatchThreeLevelTest, LocalLayer0DoesNotUseGlobalSymmetricFlag)
+{
+    auto topo = MakeTopoInfo(
+        3, 48,
+        {
+            MakeLevel(Range(8), PhysicalLevelView::LOCAL),
+            MakeLevel(Range(32), PhysicalLevelView::GLOBAL, {32, 16}),
+            MakeLevel(Range(48), PhysicalLevelView::GLOBAL, {48}),
+        });
+    topo.level0Symmetric = false;
+
+    AlgAttrs profile = MakeProfile({AlgoType::MESH, AlgoType::NHR, AlgoType::NHR});
+    AlgHierarchyInfoForAllLevel info;
+    ASSERT_EQ(matcher_.MatchTopo(&topo, info, profile), HcclResult::HCCL_SUCCESS);
+    ASSERT_EQ(info.infos.size(), 3u);
+    EXPECT_EQ(info.infos[0][0], Range(8));
+    EXPECT_EQ(info.infos[1][0], (std::vector<u32>{3, 11}));
+    EXPECT_EQ(info.infos[2][0], (std::vector<u32>{3, 19, 35}));
+}
+
+// Layer1非对称GCD切分不依赖设备类型和deviceNumPerModule
+TEST_F(TopoMatchThreeLevelTest, Layer1AsymmetricGcdDoesNotDependOnDeviceOrModuleSize)
+{
+    auto topo = MakeTopoInfo(
+        24, 48,
+        {
+            MakeLevel(RangeFrom(24, 8), PhysicalLevelView::GLOBAL, {8, 8, 8, 8, 8, 8}),
+            MakeLevel(Range(32), PhysicalLevelView::GLOBAL, {32, 16}),
+            MakeLevel(Range(48), PhysicalLevelView::GLOBAL, {48}),
+        });
+    topo.deviceType = HcclDevType::DEV_TYPE_960;
+    topo.deviceNumPerModule = 16;
+
+    AlgAttrs profile = MakeProfile({AlgoType::MESH, AlgoType::NHR, AlgoType::NHR});
+    AlgHierarchyInfoForAllLevel info;
+    ASSERT_EQ(matcher_.MatchTopo(&topo, info, profile), HcclResult::HCCL_SUCCESS);
+    ASSERT_EQ(info.infos.size(), 3u);
+    EXPECT_EQ(info.infos[0][0], RangeFrom(24, 8));
+    EXPECT_EQ(info.infos[1][0], (std::vector<u32>{16, 24}));
+    EXPECT_EQ(info.infos[2][0], (std::vector<u32>{8, 24, 40}));
+}
+
+// Layer0为GLOBAL且instSizeList非对称（sym0=false），!sym0直接拦截 → NOT_SUPPORT
+TEST_F(TopoMatchThreeLevelTest, GlobalAsymmetricLevel0DirectReject)
+{
+    auto topo = MakeTopoInfo(
+        24, 48,
+        {
+            MakeLevel(RangeFrom(24, 8), PhysicalLevelView::GLOBAL, {16, 8, 8, 8, 8}),
+            MakeLevel(Range(32), PhysicalLevelView::GLOBAL, {32, 16}),
+            MakeLevel(Range(48), PhysicalLevelView::GLOBAL, {48}),
+        });
+    AlgAttrs profile = MakeProfile({AlgoType::MESH, AlgoType::NHR, AlgoType::NHR});
+    AlgHierarchyInfoForAllLevel info;
+    EXPECT_EQ(matcher_.MatchTopo(&topo, info, profile), HcclResult::HCCL_E_NOT_SUPPORT);
 }
 
 // H6: level1TotalSize 不被 d0 整除 → NOT_SUPPORT

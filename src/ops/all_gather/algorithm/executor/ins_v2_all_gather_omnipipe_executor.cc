@@ -887,8 +887,7 @@ REGISTER_EXEC_V2_MULTI(
 REGISTER_ALG_ATTRS(
     AicpuAllGatherPipeLineMeshNHRNHR, topo.minTopoLevelNum = TOPO_LEVEL_NUM_2;
     topo.topoCustomCheck = [](const TopoInfoWithNetLayerDetails* topo) -> bool {
-        return topo->topLevelUboe && topo->level0Symmetric && topo->level1Symmetric
-               && topo->deviceNumPerModule == DEVICE_NUM_PER_MODULE_8;
+        return topo->topLevelUboe && topo->level0Symmetric && topo->deviceNumPerModule == DEVICE_NUM_PER_MODULE_8;
     });
 // 3级算法: HostDPU 场景，L2 使用 DPU 专用模板
 REGISTER_EXEC_V2_MULTI(
