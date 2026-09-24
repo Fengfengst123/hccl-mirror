@@ -63,13 +63,36 @@ public:
         PipeBarrier<PIPE_ALL>();
     }
 
-    __aicore__ inline void Process(uint64_t count, uint64_t tag, uint64_t stride)
+    __aicore__ inline void ProcessChunk(uint64_t count, uint64_t tag, uint64_t stride)
     {
         if (numBlocks_ >= rankSize_) {
             InitCoreInfo(count, tag);
             Run(count, stride);
         } else {
             RunCtrlCore(count, tag, stride);
+        }
+    }
+
+    __aicore__ inline void Process(uint64_t len, int32_t tag, uint64_t stride, uint64_t cclBufferSize)
+    {
+        uint64_t alignCount = UB_ALIGN_SIZE / sizeof(T);
+        uint64_t avgBufferCount = cclBufferSize / sizeof(T) / alignCount * alignCount;
+        if (avgBufferCount == 0) {
+            return;
+        }
+        int32_t curTag = tag << AIV_TAG_MOVE_RIGHT_BITS;
+        uint64_t remainCount = len;
+        while (remainCount > 0) {
+            uint64_t curCount = remainCount > avgBufferCount ? avgBufferCount : remainCount;
+            PipeBarrier<PIPE_ALL>();
+            ProcessChunk(curCount, curTag, stride);
+            PipeBarrier<PIPE_ALL>();
+            // 读写完成同步
+            BatchRecordWait(curTag);
+            curTag += 1;
+            remainCount -= curCount;
+            input_ += curCount * sizeof(T);
+            output_ += curCount * sizeof(T);
         }
     }
 
@@ -84,15 +107,14 @@ public:
         uint64_t curCountCore = block_idx == numBlocks_ - 1 ? count - countPerCore * (numBlocks_ - 1) : countPerCore;
         auto gmIn = reinterpret_cast<__gm__ T*>(
             reinterpret_cast<uint64_t>(GM_IN[rank_]) + block_idx * countPerCore * dataTypeSize);
-        CpGM2GM(gmIn, input + block_idx * countPerCore * dataTypeSize, curCountCore);
+        CpGM2GM(gmIn, input + block_idx * countPerCore, curCountCore);
         PipeBarrier<PIPE_ALL>();
         Record(rank_, block_idx, tag);
         for (uint32_t idx = 0; idx < numBlocks_; idx++) {
             WaitFlag(rank_, idx, tag);
-            Record(rank_, idx, 0);
         }
         if (block_idx == 0) {
-            Record(rank_, rank_, tag);
+            Record(rank_, rankSize_ + rank_, tag);
         }
         uint32_t perCoreRankNum = rankSize_ / numBlocks_;
         uint32_t curCoreRankNum
@@ -101,11 +123,22 @@ public:
         for (uint32_t rank = startRank; rank < startRank + curCoreRankNum; rank++) {
             auto gmOthers = reinterpret_cast<__gm__ T*>(reinterpret_cast<uint64_t>(GM_IN[rank]));
             auto output = reinterpret_cast<__gm__ T*>(output_ + rank * stride);
-            WaitFlag(rank, rank, tag);
+            WaitFlag(rank, rankSize_ + rank, tag);
             CpGM2GM(output, gmOthers, count);
             PipeBarrier<PIPE_ALL>();
         }
     }
+
+    __aicore__ inline void BatchRecordWait(int32_t tag)
+    {
+        for (uint32_t idx = 0; idx < rankSize_; idx++) {
+            Record(idx, TAG_SYNC_OFFSET + GetBlockIdx() * rankSize_ + rank_, tag);
+        }
+        for (uint32_t idx = 0; idx < rankSize_; idx++) {
+            WaitFlag(rank_, TAG_SYNC_OFFSET + GetBlockIdx() * rankSize_ + idx, tag);
+        }
+    }
+
     uint64_t coreOffset;
     int32_t curTag;
     uint64_t curCount;
@@ -116,12 +149,12 @@ __aicore__ inline void AivAllGatherV2Mesh1D(EXTERN_KERNEL_ARGS_DEF_V2)
 {
     AivAllGatherMesh1D<T> op;
     op.Init(KERNEL_CLASS_INIT, true);
-    SyncAll<true>();
+    SyncAllSafe();
     if (block_idx == 0 && tag >> AIV_TAG_MOVE_RIGHT_BITS == 1 && (tag & LOW_16_BITS) == 1) {
         op.BarrierForFirstOP();
     }
-    SyncAll<true>();
+    SyncAllSafe();
 
-    op.Process(len, tag, outputSliceStride);
+    op.Process(len, op.tag_, outputSliceStride, cclBufferSize);
     op.BarrierAll();
 }
