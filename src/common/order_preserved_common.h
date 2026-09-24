@@ -13,6 +13,9 @@
 
 #include "alg_param.h"
 #include "alg_env_config.h"
+#include "dlhcomm_function.h"
+#include "hcomm_dlsym.h"
+#include "log.h"
 #include <algorithm>
 
 namespace ops_hccl {
@@ -44,6 +47,44 @@ struct OrderPreservedBaseParams {
     u64 maxTmpMemSize;
 };
 
+inline u8 GetDeterministicLevel(HcclComm comm)
+{
+    u8 environmentLevel = GetExternalInputHcclDeterministic();
+    int hcommVersion = GetHcommVersion();
+    if (hcommVersion <= CANN_VERSION(9, 2, 0, 1)) {
+        HCCL_INFO(
+            "[GetDeterministicLevel] HCOMM version[%d] does not support deterministic config query, use environment "
+            "level[%u].",
+            hcommVersion, environmentLevel);
+        return environmentLevel;
+    }
+
+    auto& hcommFunction = DlHcommFunction::GetInstance();
+    if (!hcommFunction.dlHcclConfigGetInfo) {
+        HCCL_WARNING(
+            "[GetDeterministicLevel] HcclConfigGetInfo is not supported, use environment level[%u].", environmentLevel);
+        return environmentLevel;
+    }
+
+    uint32_t deterministicLevel = 0;
+    HcclResult ret = hcommFunction.dlHcclConfigGetInfo(
+        comm, static_cast<HcclConfigType>(HCCL_CONFIG_TYPE_DETERMINISTIC), sizeof(deterministicLevel),
+        &deterministicLevel);
+    if (ret != HCCL_SUCCESS) {
+        HCCL_WARNING(
+            "[GetDeterministicLevel] HcclConfigGetInfo failed, ret[%d], use environment level[%u].", ret,
+            environmentLevel);
+        return environmentLevel;
+    }
+    if (deterministicLevel > static_cast<uint32_t>(DeterministicEnableLevel::DETERMINISTIC_STRICT)) {
+        HCCL_WARNING(
+            "[GetDeterministicLevel] deterministicLevel[%u] is invalid, use environment level[%u].", deterministicLevel,
+            environmentLevel);
+        return environmentLevel;
+    }
+    return static_cast<u8>(deterministicLevel);
+}
+
 inline OrderPreservedBaseParams
 InitOrderPreservedBaseParams(const OpParam& param, const AlgResourceCtxSerializable& resCtx)
 {
@@ -62,7 +103,7 @@ InitOrderPreservedBaseParams(const OpParam& param, const AlgResourceCtxSerializa
 
 inline bool IsNeedStrictModeForOrderPreserved(const OpParam& opParam, u32 rankSize)
 {
-    u8 deterministicLevel = GetExternalInputHcclDeterministic();
+    u8 deterministicLevel = GetDeterministicLevel(opParam.hcclComm);
     HcclDataType dataType = opParam.DataDes.dataType;
     HcclReduceOp reduceType = opParam.reduceType;
     return (deterministicLevel == static_cast<u8>(DeterministicEnableLevel::DETERMINISTIC_STRICT))
