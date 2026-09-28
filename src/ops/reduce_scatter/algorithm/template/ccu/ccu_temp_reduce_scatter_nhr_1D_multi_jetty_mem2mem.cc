@@ -100,8 +100,8 @@ HcclResult CcuTempReduceScatterNhrMultiJettyMem2Mem1D::CalcRes(
     resourceRequest.ccuKernelInfos.push_back(kernelInfo);
 
     HCCL_DEBUG(
-        "[CcuTempReduceScatterNhrMultiJettyMem2Mem1D::CalcRes] myChannelDescs.size()=%llu, dimsize=%llu, "
-        "ccuKernelInfos.size()=%llu",
+        "[CcuTempReduceScatterNhrMultiJettyMem2Mem1D::CalcRes] myChannelDescs.size()=%zu, dimsize=%zu, "
+        "ccuKernelInfos.size()=%zu",
         myChannelDescs.size(), subCommRanks_[0].size(), resourceRequest.ccuKernelInfos.size());
 
     return HcclResult::HCCL_SUCCESS;

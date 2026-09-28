@@ -458,7 +458,7 @@ HcclResult InsReduceScatterParallelExecutor<AlgTopoMatch, InsAlgTemplate0, InsAl
     u64 interThreadsNum = tempAlgInter.GetThreadNum();
     if (threads_.size() < intraThreadsNum + interThreadsNum + 1) {
         HCCL_ERROR(
-            "[InsReduceScatterParallelExecutor][PrepareResForTemplate] threads size is %d, but intraThreadsNum is %d, "
+            "[InsReduceScatterParallelExecutor][PrepareResForTemplate] threads size is %zu, but intraThreadsNum is %d, "
             "interThreadsNum is %d",
             threads_.size(), intraThreadsNum, interThreadsNum);
         return HCCL_E_PARA;
