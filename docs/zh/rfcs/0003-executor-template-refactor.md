@@ -207,7 +207,7 @@ virtual bool CanParallelPostCopy(const TemplateResource& templateResource) const
 virtual HcclResult LaunchPostCopy(const std::vector<ThreadHandle>& threads, const ThreadHandle& lastWriteThread);
 
 // 通信后本地处理（ccl buffer → output）
-// 默认：将 ccl buffer 中其它 rank 的数据搬回 output
+// 默认：将 ccl buffer 中其他 rank 的数据搬回 output
 virtual HcclResult PostCopy(const std::vector<ThreadHandle> &threads);
 
 // 计算所需线程数与 notify 数
@@ -675,7 +675,7 @@ Child 2:  CCL    → OUTPUT
 
 `dataSplitRatio` 是**比例**（ratio），不是绝对计数。例如 `{2, 1}` 表示 Child 0 和 Child 1 按 2:1 比例分配 Parent 的 `sliceCount`。具体计算：`childSlice[i] = floor(parentSlice * ratio[i] / sum(ratio))`，最后一个 Child 承接整除余量以保证数据不丢失。以 `{2, 1}` 且 `parentSlice = 10` 为例：Child 0 得 `floor(10 * 2 / 3) = 6`，Child 1 得 `10 - 6 = 4`。
 
-**余量分配的影响**：余量（最多 `childrenSize - 1` 个元素）固定集中到最后一个 Child。数据量远大于 Rank 数时可忽略；但在对称 Concurrent 场景（如 `{1, 1}` 且 `parentSlice` 为奇数）下，最后一个子通信域会比其它子通信域多处理一个 Slot，造成轻微负载不均。该策略当前不可配置；对均衡敏感的场景，建议在算法构建阶段按实际端口/带宽比例设置 `dataSplitRatio`（使切分与各通信域能力匹配），余量影响随数据量增大自然稀释，必要时可评估扩展余量分散策略。
+**余量分配的影响**：余量（最多 `childrenSize - 1` 个元素）固定集中到最后一个 Child。数据量远大于 Rank 数时可忽略；但在对称 Concurrent 场景（如 `{1, 1}` 且 `parentSlice` 为奇数）下，最后一个子通信域会比其他子通信域多处理一个 Slot，造成轻微负载不均。该策略当前不可配置；对均衡敏感的场景，建议在算法构建阶段按实际端口/带宽比例设置 `dataSplitRatio`（使切分与各通信域能力匹配），余量影响随数据量增大自然稀释，必要时可评估扩展余量分散策略。
 
 Parallel 的每个 Child 从 Parent 继承大部分状态，但重新计算 `sliceCount` 和 `sliceOffset`：按上述比例切分，Offset 累加前一 Child 覆盖范围。Tail 只传给最后一个 Child。
 
@@ -706,7 +706,7 @@ AlgoExecDesc root {
 
 若需更复杂的拓扑组合，子树可递归使用 `OMNIPIPE` 策略嵌套，但不能使用 `SEQUENCE`/`PARALLEL` 作为 OMNIPIPE 的子树。
 
-当前约束：`OMNIPIPE` 策略仅支持 `ALLREDUCE`/`ALLGATHER` 两个命令（`OpsExecutor::Orchestrate` 对其它命令直接报错）。
+当前约束：`OMNIPIPE` 策略仅支持 `ALLREDUCE`/`ALLGATHER` 两个命令（`OpsExecutor::Orchestrate` 对其他命令直接报错）。
 
 ###### OmniPipe 执行流程
 
@@ -907,7 +907,7 @@ if (topoInfo->topoLevelNums > 1) {
         // ... 原 3 级逻辑保持不变
 ```
 
-- 该分支只把**算法名**写进 `selectAlgName`，此后与 src 其它算法走完全相同的路由，不感知 recursive\_executor 存在。
+- 该分支只把**算法名**写进 `selectAlgName`，此后与 src 其他算法走完全相同的路由，不感知 recursive\_executor 存在。
 
 #### 3.3 执行期：AdaptorExecutor 桥接层
 
@@ -1259,7 +1259,7 @@ set(RE_CORE_SRC
 | **集中爆炸半径**                     | 53 个特化执行器合并为 1 个通用执行器，单点 bug 影响所有算子与编排方式；回退需在 Selector 中移除 recursive\_executor 算法分支，无法单算子回退              | 核心执行路径补齐 UT/ST；按 Phase 1→2→3 渐进灰度；异常时关键算子可继续走 src 旧执行器做 A/B 对照 |
 | **Device 侧动态内存分配**             | recursive\_executor 的 `std::vector`/`std::map`/`std::shared_ptr` 依赖堆分配；AICPU 内核一般允许堆分配，但 CCU 等受限引擎可能限制   | 接入受限引擎前校核其内存约束；热路径复用预分配容器，避免循环内反复分配                            |
 | **递归栈深度**                      | `OrchestrateLoop`/`OrchestrateOmniPipeLoop` 按算法树深度递归，深度受"拓扑层数 × 嵌套组合"约束（4 级 + 嵌套约个位数层）                   | 深度上界小、Device 栈风险低；可在注册表构建期校验算法树深度上限                            |
-| **static 初始化顺序**               | `REGISTER_ALG` 在静态初始化期把算法登记进 `AlgSelector`（Meyers 单例，惰性初始化、本身无顺序问题）；若算法工厂依赖其它跨翻译单元的 static 全局对象，初始化顺序未定义 | 算法工厂只依赖函数内局部对象与 src 常量，不引用其它 static 全局；如后续需要，改为显式注册函数          |
+| **static 初始化顺序**               | `REGISTER_ALG` 在静态初始化期把算法登记进 `AlgSelector`（Meyers 单例，惰性初始化、本身无顺序问题）；若算法工厂依赖其他跨翻译单元的 static 全局对象，初始化顺序未定义 | 算法工厂只依赖函数内局部对象与 src 常量，不引用其他 static 全局；如后续需要，改为显式注册函数          |
 
 ## 替代方案
 

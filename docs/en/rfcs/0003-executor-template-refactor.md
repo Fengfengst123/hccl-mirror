@@ -208,7 +208,7 @@ virtual bool CanParallelPostCopy(const TemplateResource& templateResource) const
 virtual HcclResult LaunchPostCopy(const std::vector<ThreadHandle>& threads, const ThreadHandle& lastWriteThread);
 
 // Local post-processing after communication (ccl buffer → output)
-// Default: move data from other ranks in ccl buffer back to output
+// Default: copy other ranks' data from the ccl buffer back to output
 virtual HcclResult PostCopy(const std::vector<ThreadHandle> &threads);
 
 // Calculate required thread count and notify count
@@ -707,7 +707,7 @@ AlgoExecDesc root {
 
 For more complex topology combinations, subtrees can recursively use the `OMNIPIPE` policy for nesting, but `SEQUENCE`/`PARALLEL` cannot be used as subtrees under OMNIPIPE.
 
-Current constraint: the `OMNIPIPE` policy only supports `ALLREDUCE`/`ALLGATHER` commands (`OpsExecutor::Orchestrate` directly errors on other commands).
+Current constraint: the `OMNIPIPE` policy only supports `ALLREDUCE`/`ALLGATHER` commands (`OpsExecutor::Orchestrate` returns an error for other commands).
 
 ###### OmniPipe Execution Flow
 

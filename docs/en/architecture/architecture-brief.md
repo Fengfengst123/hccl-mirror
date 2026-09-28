@@ -22,7 +22,7 @@ flowchart LR
 
 | Dimension | Capability |
 |------|------|
-| **Collective communication primitives** | AllReduce, Broadcast, AllGather, ReduceScatter, AlltoAllv, Send, Receive, and so on |
+| **Collective communication primitives** | AllReduce, Broadcast, AllGather, ReduceScatter, AlltoAllV, Send, Receive, and so on |
 | **Communication algorithms** | Ring, Mesh, RHD (Halving-Doubling), Star + proprietary algorithms |
 | **Main communication protocols** | UB_CTP, UB_RTP, UBoE, RoCE (v2), HCCS, UB_MEM |
 | **Execution modes** | Single-operator mode + graph mode |
@@ -82,7 +82,7 @@ The foundation of collective communication consists of four **primitive concepts
 | **Communication memory (CommMem)** | Memory segments registered to the communicator and accessible by communication devices (Endpoints) | NPU On-chip memory / Host memory |
 | **Communication engine (CommEngine)** | The module that executes communication tasks, including Threads and thread schedulers, driving communication hardware to transfer data | AICPU_TS, CCU, AIV |
 
-> **Composition relationship**: Channel = communication devices at both ends + communication protocol + N Notifys
+> **Composition relationship**: Channel = communication devices at both ends + communication protocol + N Notify objects
 
 ![Base Communication Model](diagrams/base_comm_model.excalidraw.svg)
 
