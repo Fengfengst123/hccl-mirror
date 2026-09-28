@@ -165,7 +165,7 @@ InsV2AllGatherSequenceExecutor3Level<AlgTopoMatch, InsAlgTemplate0, InsAlgTempla
 {
     if (algHierarchyInfo.infos.size() != SEQUENCE_EXECUTOR_3_LEVEL_NUM) {
         HCCL_ERROR(
-            "[InsV2AllGatherSequenceExecutor3Level] algHierarchyInfo size %u should be %u",
+            "[InsV2AllGatherSequenceExecutor3Level] algHierarchyInfo size %zu should be %u",
             algHierarchyInfo.infos.size(), SEQUENCE_EXECUTOR_3_LEVEL_NUM);
         return HCCL_E_INTERNAL;
     }
@@ -204,7 +204,7 @@ InsV2AllGatherSequenceExecutor3Level<AlgTopoMatch, InsAlgTemplate0, InsAlgTempla
     resourceRequest.channels.emplace_back(Level2TempRequest.channels[0]);
     HCCL_DEBUG(
         "[InsV2AllGatherSequenceExecutor3Level][CalcRes] notifyNumOnMainThread[%u], slaveThreadNum[%u], "
-        "channels[%u]",
+        "channels[%zu]",
         resourceRequest.notifyNumOnMainThread, resourceRequest.slaveThreadNum, resourceRequest.channels.size());
     for (auto i = 0; i < resourceRequest.notifyNumPerThread.size(); i++) {
         HCCL_DEBUG(

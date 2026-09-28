@@ -607,7 +607,7 @@ HcclResult HcclExecOpCcuFastLaunch(HcclComm comm, OpParam& param, const CcuFastL
     param.dataCount = hcclDfxOpInfo.dataCount;
     CHK_RET(HcclDfxRegOpInfoByCommId(param.commName, reinterpret_cast<void*>(&hcclDfxOpInfo)));
     if (IsStreamInCaptureMode(param.stream) && threadTemps.size() > 1) {
-        HCCL_INFO("HcclExecOpCcuFastLaunch streamnum %d add slavestream", threadTemps.size());
+        HCCL_INFO("HcclExecOpCcuFastLaunch streamnum %zu add slavestream", threadTemps.size());
         CHK_RET(CaptureSlaveStreams(comm, param.stream, threadTemps, param.isCapture));
     }
 
@@ -2163,7 +2163,7 @@ HcclResult RegGraphModeBuffers(
         CHK_PTR_NULL(outputHandle);
         memHandles.emplace_back(outputHandle);
     }
-    HCCL_INFO("[RegGraphModeBuffers]memHandles size[%d]", memHandles.size());
+    HCCL_INFO("[RegGraphModeBuffers]memHandles size[%zu]", memHandles.size());
     return HCCL_SUCCESS;
 }
 

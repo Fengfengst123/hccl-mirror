@@ -77,7 +77,7 @@ HcclResult InsTempAllReduceMesh1DTwoShotMeshChunk::CalcRes(
     HCCL_WARNING("Resource calculation is temporarily not performed in the template.");
     HCCL_INFO(
         "[InsTempAllReduceMesh1DTwoShotMeshChunk] Calculate resource finished."
-        "resource request: threadNum[%u], main thread notifyNum[%u], channelNum[%u]",
+        "resource request: threadNum[%u], main thread notifyNum[%u], channelNum[%zu]",
         resourceRequest.slaveThreadNum + 1, resourceRequest.notifyNumOnMainThread,
         resourceRequest.channels.at(0).size());
     return HcclResult::HCCL_SUCCESS;
@@ -153,7 +153,7 @@ HcclResult InsTempAllReduceMesh1DTwoShotMeshChunk::KernelRun(
     CHK_PRT_RET(
         sliceInfoVec.size() != templateRankSize_,
         HCCL_ERROR(
-            "[InsTempAllReduceMesh1DTwoShotMeshChunk][KernelRun] slice num[%u] is not equal to rank size[%u].",
+            "[InsTempAllReduceMesh1DTwoShotMeshChunk][KernelRun] slice num[%zu] is not equal to rank size[%u].",
             sliceInfoVec.size(), templateRankSize_),
         HcclResult::HCCL_E_INTERNAL);
 

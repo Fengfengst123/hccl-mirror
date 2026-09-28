@@ -133,8 +133,8 @@ HcclResult CcuTempAllReduceMesh1D::CalcRes(
     resourceRequest.ccuKernelInfos.push_back(kernelInfo);
 
     HCCL_DEBUG(
-        "[CcuTempAllReduceMesh1D::CalcRes] channelDescs.size()=%llu, templateRankSize_=%llu, "
-        "ccuKernelInfos.size()=%llu",
+        "[CcuTempAllReduceMesh1D::CalcRes] channelDescs.size()=%zu, templateRankSize_=%llu, "
+        "ccuKernelInfos.size()=%zu",
         channelDescs.size(), templateRankSize_, resourceRequest.ccuKernelInfos.size());
     return HcclResult::HCCL_SUCCESS;
 }

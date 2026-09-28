@@ -933,8 +933,8 @@ HcclResult LocalCopySlices(
     CHK_PRT_RET(
         srcSlices.size() != dstSlices.size(),
         HCCL_ERROR(
-            "[InsCollAlgFactory] [AlgDataTrans] LocalCopySlices: num of src slices [%u], is not equal "
-            "to num of dst slices [%u].",
+            "[InsCollAlgFactory] [AlgDataTrans] LocalCopySlices: num of src slices [%zu], is not equal "
+            "to num of dst slices [%zu].",
             srcSlices.size(), dstSlices.size()),
         HcclResult::HCCL_E_INTERNAL);
 
@@ -1014,14 +1014,14 @@ HcclResult PreSyncInterThreads(
     CHK_PRT_RET(
         subThreads.size() == 0 || notifyIdxMainToSub.size() == 0,
         HCCL_ERROR(
-            "[AlgDataTransWrapper] [PreSyncInterThreads] subThreads size: [%u], notifyIdxMainToSub size [%u] "
+            "[AlgDataTransWrapper] [PreSyncInterThreads] subThreads size: [%zu], notifyIdxMainToSub size [%zu] "
             "0 is not correct.",
             subThreads.size(), notifyIdxMainToSub.size()),
         HcclResult::HCCL_E_INTERNAL);
     CHK_PRT_RET(
         subThreads.size() != notifyIdxMainToSub.size(),
         HCCL_ERROR(
-            "[AlgDataTransWrapper] [PreSyncInterThreads] subThreads size: [%u], notifyIdxMainToSub size [%u] "
+            "[AlgDataTransWrapper] [PreSyncInterThreads] subThreads size: [%zu], notifyIdxMainToSub size [%zu] "
             "is not equal.",
             subThreads.size(), notifyIdxMainToSub.size()),
         HcclResult::HCCL_E_INTERNAL);
@@ -1049,14 +1049,14 @@ HcclResult PostSyncInterThreads(
     CHK_PRT_RET(
         subThreads.size() == 0 || notifyIdxSubToMain.size() == 0,
         HCCL_ERROR(
-            "[AlgDataTransWrapper] [PreSyncInterThreads] subThreads size: [%u], notifyIdxSubToMain size [%u] "
+            "[AlgDataTransWrapper] [PreSyncInterThreads] subThreads size: [%zu], notifyIdxSubToMain size [%zu] "
             "0 is not correct.",
             subThreads.size(), notifyIdxSubToMain.size()),
         HcclResult::HCCL_E_INTERNAL);
     CHK_PRT_RET(
         subThreads.size() != notifyIdxSubToMain.size(),
         HCCL_ERROR(
-            "[AlgDataTransWrapper] [PreSyncInterThreads] subThreads size: [%u], notifyIdxSubToMain size [%u] "
+            "[AlgDataTransWrapper] [PreSyncInterThreads] subThreads size: [%zu], notifyIdxSubToMain size [%zu] "
             "is not equal.",
             subThreads.size(), notifyIdxSubToMain.size()),
         HcclResult::HCCL_E_INTERNAL);

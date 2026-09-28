@@ -147,7 +147,7 @@ HcclResult InsV2AllReduceSequence2DieExecutor<AlgTopoMatch, InsAlgTemplate0, Ins
                 info.resGroup = 1;
             });
         HCCL_INFO(
-            "[InsV2AllReduceSequence2DieExecutor][CalcRes] all has [%d] kernels.",
+            "[InsV2AllReduceSequence2DieExecutor][CalcRes] all has [%zu] kernels.",
             resourceRequest.ccuKernelInfos.size());
     }
     return HCCL_SUCCESS;

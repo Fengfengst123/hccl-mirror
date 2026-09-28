@@ -382,7 +382,7 @@ HcclResult InsV2AllGatherSequenceExecutorAicpu<AlgTopoMatch, InsAlgTemplate0, In
     if (channelLevelIdx >= remoteRankToChannelInfo_.size()) {
         HCCL_ERROR(
             "[InsV2AllGatherSequenceExecutorAicpu][GenTempResource] channelLevelIdx[%u] should be lower"
-            "than remoteRankToChannelInfo_.size()[%u]",
+            "than remoteRankToChannelInfo_.size()[%zu]",
             channelLevelIdx, remoteRankToChannelInfo_.size());
         return HCCL_E_INTERNAL;
     }

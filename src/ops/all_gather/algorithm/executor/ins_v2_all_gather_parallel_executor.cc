@@ -257,7 +257,7 @@ HcclResult InsV2AllGatherParallelExecutor<AlgTopoMatch, InsAlgTemplate0, InsAlgT
     }
     HCCL_DEBUG(
         "[InsV2AllGatherParallelExecutor][CalcRes] myRank[%u], notifyNumOnMainThread[%u], slaveThreadNum[%u], "
-        "channels[%u]",
+        "channels[%zu]",
         myRank_, resourceRequest.notifyNumOnMainThread, resourceRequest.slaveThreadNum,
         resourceRequest.channels.size());
     for (auto i = 0; i < resourceRequest.notifyNumPerThread.size(); i++) {
