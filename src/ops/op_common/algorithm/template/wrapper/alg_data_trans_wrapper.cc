@@ -1308,7 +1308,7 @@ HcclResult AicpuReduce(
                 reduceOp);
             break;
         default:
-            HCCL_ERROR("DataType[%d] not support", int(dataType));
+            HCCL_ERROR("DataType[%d] is not supported", int(dataType));
             ret = HCCL_E_INTERNAL;
             break;
     }
@@ -1349,7 +1349,7 @@ HcclResult AicpuReduceTemplate(T* dst, u64 dstSize, T* src, u64 srcSize, const H
                 *(dst + i) = std::min(srcData, dstData);
                 break;
             default:
-                HCCL_ERROR("ReduceOp[%d] not support", int(reduceOp));
+                HCCL_ERROR("ReduceOp[%d] is not supported", int(reduceOp));
                 ret = HcclResult::HCCL_E_INTERNAL;
                 break;
         }

@@ -128,7 +128,7 @@ static CcuResult PreSync(ReduceScatterOmniPipeNHR1DMem2MemContext& ctx)
             CCU_CHK_RET(ccu::NotifyWait(arg->channels[i], signalIdx, waitMask));
         }
     }
-    HCCL_INFO("[CcuKernelReduceScatterNhrMutilJettyMem2Mem1D] PreSync end");
+    HCCL_INFO("[CcuKernelReduceScatterOmniPipeNHR1DMem2Mem] PreSync end");
     return CCU_SUCCESS;
 }
 

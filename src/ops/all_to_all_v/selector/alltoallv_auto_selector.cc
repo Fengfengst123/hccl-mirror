@@ -78,7 +78,7 @@ SelectorStatus AlltoAllVAutoSelector::SelectCcuScheduleAlgo(
                 selectAlgName = "CcuSchedAllToAllVSoleMeshMultiLink";
             }
         } else {
-            HCCL_WARNING("[Algo][AlltoAllVAutoSelector] clos not support for ccu_schedule mode.");
+            HCCL_WARNING("[Algo][AlltoAllVAutoSelector] clos is not supported for ccu_schedule mode.");
             return SelectorStatus::NOT_MATCH;
         }
     } else {
@@ -117,7 +117,7 @@ SelectorStatus AlltoAllVAutoSelector::SelectCcuScheduleAlgo(
             return SelectorStatus::NOT_MATCH;
         }
     }
-    HCCL_DEBUG("[AlltoAllVAutoSelector][%s] Algo match[%s]", __func__, selectAlgName.c_str());
+    HCCL_DEBUG("[AlltoAllVAutoSelector][%s] Algo match [%s]", __func__, selectAlgName.c_str());
     return SelectorStatus::MATCH;
 }
 
@@ -132,7 +132,7 @@ SelectorStatus AlltoAllVAutoSelector::SelectAicpuAlgo(
         // 跨框 MESH_1D 且 rankSize 为 16 的倍数走 Pairwise
         if (IsPairwiseCapable(topoInfo)) {
             selectAlgName = "AicpuAllToAllVSolePairwise";
-            HCCL_INFO("[AlltoAllVAutoSelector][%s] Algo match[%s]", __func__, selectAlgName.c_str());
+            HCCL_INFO("[AlltoAllVAutoSelector][%s] Algo match [%s]", __func__, selectAlgName.c_str());
             return SelectorStatus::MATCH;
         }
         if (topoInfo->level0Topo == Level0Shape::MESH_1D || topoInfo->level0Topo == Level0Shape::CLOS
@@ -150,7 +150,7 @@ SelectorStatus AlltoAllVAutoSelector::SelectAicpuAlgo(
         // PCIE-SW定制机型，使用mesh1d算法
         if (topoInfo->level0PcieMix) {
             selectAlgName = "AicpuAllToAllVSoleMesh";
-            HCCL_INFO("[AlltoAllVAutoSelector][%s] Algo match[%s]", __func__, selectAlgName.c_str());
+            HCCL_INFO("[AlltoAllVAutoSelector][%s] Algo match [%s]", __func__, selectAlgName.c_str());
             return SelectorStatus::MATCH;
         }
         bool isMeshNumEqualToClosNum = false;
@@ -167,7 +167,7 @@ SelectorStatus AlltoAllVAutoSelector::SelectAicpuAlgo(
         return SelectorStatus::NOT_MATCH;
     }
 
-    HCCL_DEBUG("[AlltoAllVAutoSelector][%s] Algo match[%s]", __func__, selectAlgName.c_str());
+    HCCL_DEBUG("[AlltoAllVAutoSelector][%s] Algo match [%s]", __func__, selectAlgName.c_str());
     return SelectorStatus::MATCH;
 }
 
@@ -201,7 +201,7 @@ SelectorStatus AlltoAllVAutoSelector::SelectAivAlgo(
     }
 
     selectAlgName = "AivAllToAllVSoleMesh";
-    HCCL_DEBUG("[AlltoAllVAutoSelector][%s] Algo match[%s]", __func__, selectAlgName.c_str());
+    HCCL_DEBUG("[AlltoAllVAutoSelector][%s] Algo match [%s]", __func__, selectAlgName.c_str());
     return SelectorStatus::MATCH;
 }
 

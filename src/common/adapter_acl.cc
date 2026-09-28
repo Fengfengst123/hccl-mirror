@@ -80,7 +80,7 @@ HcclResult haclrtGetCaptureInfo(aclrtStream stream, aclmdlRICaptureStatus& captu
     aclmdlRI rtModel = nullptr;
     aclError ret = aclmdlRICaptureGetInfo(stream, &captureStatus, &rtModel);
     if (ret == ACL_ERROR_RT_FEATURE_NOT_SUPPORT) {
-        HCCL_WARNING("[%s]Stream capture does not support!", __func__);
+        HCCL_WARNING("[%s]Stream capture is not supported!", __func__);
         return HCCL_SUCCESS;
     } else {
         CHK_PRT_RET(

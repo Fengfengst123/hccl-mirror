@@ -31,7 +31,7 @@ std::vector<CostModelParam> InsTempAllReduceMesh1DTwoShotMeshChunk::CalcCostCoef
     int taskNum = CostModelManager::CalcTransTaskNum(param.rankSize) * (param.rankSize - 1)
                   + CostModelManager::CalcSyncTaskNum(param.rankSize) * param.rankSize
                   + CostModelManager::CalcTransTaskNum(param.rankSize);
-    // 第一步是reducescatter，
+    // 第一步是ReduceScatter，
     float A = 0.0f;
     float B = 0.0f;
     float C = 0.0f;

@@ -240,7 +240,7 @@ HcclResult InsV2AllReduceSequence2DieExecutor<AlgTopoMatch, InsAlgTemplate0, Ins
     BufferType outBuffType = BufferType::OUTPUT;
     u32 templateScratchMultiplier = algTemplate0->CalcScratchMultiple(inBuffType, outBuffType);
     TemplateResource templateAlgRes0;
-    // 构造reducescatter template资源
+    // 构造ReduceScatter template资源
     templateAlgRes0.threads = resCtx.threads;
     // 构造allgather template资源
     TemplateResource templateAlgRes1;

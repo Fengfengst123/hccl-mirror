@@ -124,7 +124,7 @@ HcclResult InsTempAllGatherMesh1DIntra::RunAllGatherMesh(
             u64 remoteCount = tempAlgParams_.allRankProcessedDataCount.at(connectedAlgRank);
             u64 remoteOffset = tempAlgParams_.allRankDispls.at(connectedAlgRank);
 
-            // 既不发送也不接受
+            // 既不发送也不接收
             if (localSize == 0 && remoteSize == 0) {
                 continue;
             }

@@ -23,7 +23,7 @@ std::vector<CostModelParam> CcuTempAllReduceMesh1D::CalcCostCoeff(CalcCostCoeffP
                       (param.portNum[0] + param.portNum[1]) :
                       param.portNum[0];
     int kernelNum = 5;
-    // 第一步是reducescatter，
+    // 第一步是ReduceScatter，
     float A = 0.0f;
     float B = 0.0f;
     float C = 0.0f;

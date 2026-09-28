@@ -55,7 +55,7 @@ namespace {
             HCCL_INFO("[TopoMatchThreeLevel] ValidateLevelAndCalcDim level1 failed: hcclRet -> %d", ret),
             HcclResult::HCCL_E_NOT_SUPPORT);
         if (!sym0) {
-            HCCL_INFO("[TopoMatchThreeLevel] Rank [%u], asymmetric level0 detected, not support.", myRank);
+            HCCL_INFO("[TopoMatchThreeLevel] Rank [%u], asymmetric level0 detected, unsupported topology.", myRank);
             return HcclResult::HCCL_E_NOT_SUPPORT;
         }
 
@@ -91,7 +91,9 @@ namespace {
         }
         d2 = userRankSize / d0 / d1;
         if (d2 == 1) {
-            HCCL_INFO("[TopoMatchThreeLevel] Rank [%u], d0=%u, d1=%u, d2=1, not support three level.", myRank, d0, d1);
+            HCCL_INFO(
+                "[TopoMatchThreeLevel] Rank [%u], d0=%u, d1=%u, d2=1, three-level topology is not supported.", myRank,
+                d0, d1);
             return HcclResult::HCCL_E_NOT_SUPPORT;
         }
         return HcclResult::HCCL_SUCCESS;

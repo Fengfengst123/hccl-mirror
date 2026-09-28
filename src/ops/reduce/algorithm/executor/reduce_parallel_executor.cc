@@ -882,7 +882,7 @@ HcclResult ReduceParallelExecutor<AlgTopoMatch, AlgTemplate0, AlgTemplate1, AlgT
     algTemplatePtrArr_.at(1).at(0) = std::make_shared<AlgTemplate2>();
     algTemplatePtrArr_.at(1).at(1) = std::make_shared<AlgTemplate3>();
 
-    // 保存reducescatter信息
+    // 保存ReduceScatter信息
     TemplateFastLaunchCtx tempFastLaunchCtxIntra0, tempFastLaunchCtxInter0;
     TemplateFastLaunchCtx tempFastLaunchCtxInter1, tempFastLaunchCtxIntra1;
     // 保存allgather信息

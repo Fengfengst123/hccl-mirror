@@ -18,7 +18,7 @@ namespace ops_hccl {
 std::vector<CostModelParam> CcuTempAllReduceMeshMem2Mem1D::CalcCostCoeff(CalcCostCoeffParam param)
 {
     int portNum = (param.netType == CommTopo::COMM_TOPO_1DMESH) ? 1 : 6;
-    // 第一步是reducescatter，
+    // 第一步是ReduceScatter，
     float A = 0.0f;
     float B = 0.0f;
     float C = 0.0f;

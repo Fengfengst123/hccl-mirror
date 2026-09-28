@@ -204,7 +204,7 @@ HcclResult InsV2BatchSendRecvSoleExecutor<AlgTopoMatch, InsAlgTemplate>::GetPair
                 recvDeque_.push_back(sendRecvInfo);
             } else {
                 HCCL_ERROR(
-                    "[InsV2BatchSendRecvSoleExecutor][GetPairWiseList] sendRecvType wrong sendrecvType is %d, "
+                    "[InsV2BatchSendRecvSoleExecutor][GetPairWiseList] sendRecvType wrong sendRecvType is %d, "
                     "rankID is %d, remoteRank is %u.",
                     sendRecvInfo->sendRecvType, myRank_, sendRecvInfo->remoteRank);
                 return HcclResult::HCCL_E_PARA;
