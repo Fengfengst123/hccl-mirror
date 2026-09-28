@@ -599,8 +599,10 @@ static void CollectMatchedNamesForOpType(
                 if (!StartsWith(key, prefix))
                     continue;
                 if (isExecNegated) {
-                    ctx.model.costAlgoParams[i].count = 0;
                     result.negatedFound = true;
+                    if (!ContainsSendRecv(key)) {
+                        ctx.model.costAlgoParams[i].count = 0;
+                    }
                 } else if (ctx.model.costAlgoParams[i].count != 0) {
                     result.matchedNames.push_back(key);
                 }
@@ -612,8 +614,10 @@ static void CollectMatchedNamesForOpType(
                 continue;
             int algoIdx = it->second;
             if (isExecNegated) {
-                ctx.model.costAlgoParams[algoIdx].count = 0;
                 result.negatedFound = true;
+                if (!ContainsSendRecv(fullName)) {
+                    ctx.model.costAlgoParams[algoIdx].count = 0;
+                }
             } else if (ctx.model.costAlgoParams[algoIdx].count != 0) {
                 result.matchedNames.push_back(fullName);
             }
@@ -688,7 +692,6 @@ HcclResult
 UpdateCostModelWithAlgo(const HcclAlgoParser& algoParser, CostModel& model, const std::vector<std::string>& engineTypes)
 {
     CHK_RET(ExcludeAlgosNotInEngines(model, engineTypes));
-
     std::map<std::string, int> keyToIdx;
     for (int i = 0; i < model.count; i++) {
         if (model.costAlgoParams[i].algName != nullptr) {
@@ -748,6 +751,9 @@ UpdateCostModelWithAlgo(const HcclAlgoParser& algoParser, CostModel& model, cons
                 return HCCL_SUCCESS;
             }
         }
+    }
+    if (!algoParser.executorList.empty() && matchedOpTypes.empty()) {
+        HCCL_WARNING("[UpdateCostModelWithAlgo] no algorithm matched, the config has not taken effect.");
     }
     return HCCL_SUCCESS;
 }

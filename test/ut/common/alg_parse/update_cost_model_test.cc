@@ -333,6 +333,89 @@ TEST_F(UpdateCostModelTest, NegatedAlgoExcludeOthers)
 }
 
 // ---------------------------------------------------------------------------
+// Send/Recv 专用 fixture
+// 规则 4.6：send/recv 算法名不参与 count=0 的排除逻辑
+// ---------------------------------------------------------------------------
+class UpdateCostModelSendRecvTest : public testing::Test {
+protected:
+    void SetUp() override
+    {
+        std::vector<std::string> names = {
+            // Send/Recv 算法
+            "AicpuSendSoleMesh",          // 0
+            "AicpuRecvSoleMesh",          // 1
+            "AicpuBatchSendRecvSoleMesh", // 2
+            // 非 Send/Recv 对照
+            "AicpuAllReduceSoleMesh",        // 3
+            "AicpuAllReduceSequenceMeshNHR", // 4
+        };
+        cm_ = BuildCostModel(names);
+    }
+    void TearDown() override { FreeCostModel(cm_); }
+    CostModel cm_;
+};
+
+// ---------------------------------------------------------------------------
+// 测试 1：全局 not(sole{}) 前缀匹配——Send/Recv 候选不被置零
+// ---------------------------------------------------------------------------
+TEST_F(UpdateCostModelSendRecvTest, NegatedExecutorPrefixPreservesSendRecv)
+{
+    HcclAlgoParser parser;
+    ASSERT_EQ(parser.Parser("not(sole{})"), HCCL_SUCCESS);
+
+    EXPECT_EQ(UpdateCostModelWithAlgo(parser, cm_, ENGINE_TYPES), HCCL_SUCCESS);
+
+    // Send/Recv 候选保留 count=1
+    EXPECT_EQ(GetAlgoCount(cm_, "AicpuSendSoleMesh"), 1);
+    EXPECT_EQ(GetAlgoCount(cm_, "AicpuRecvSoleMesh"), 1);
+    EXPECT_EQ(GetAlgoCount(cm_, "AicpuBatchSendRecvSoleMesh"), 1);
+    // 非 Send/Recv 的 sole 算法被排除
+    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllReduceSoleMesh"), 0);
+    // 非 sole 算法不受影响
+    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllReduceSequenceMeshNHR"), 1);
+}
+
+// ---------------------------------------------------------------------------
+// 测试 2：全局 not(sole{mesh}) 精确匹配——Send/Recv 候选不被置零
+// ---------------------------------------------------------------------------
+TEST_F(UpdateCostModelSendRecvTest, NegatedExecutorExactMatchPreservesSendRecv)
+{
+    HcclAlgoParser parser;
+    ASSERT_EQ(parser.Parser("not(sole{mesh})"), HCCL_SUCCESS);
+
+    EXPECT_EQ(UpdateCostModelWithAlgo(parser, cm_, ENGINE_TYPES), HCCL_SUCCESS);
+
+    // Send/Recv 候选保留 count=1
+    EXPECT_EQ(GetAlgoCount(cm_, "AicpuSendSoleMesh"), 1);
+    EXPECT_EQ(GetAlgoCount(cm_, "AicpuRecvSoleMesh"), 1);
+    EXPECT_EQ(GetAlgoCount(cm_, "AicpuBatchSendRecvSoleMesh"), 1);
+    // 非 Send/Recv 的 sole{mesh} 算法被排除
+    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllReduceSoleMesh"), 0);
+    // 非 sole{mesh} 算法不受影响
+    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllReduceSequenceMeshNHR"), 1);
+}
+
+// ---------------------------------------------------------------------------
+// 测试 3：显式 opType 取反——allreduce:not(sole{mesh}) 不影响 Send/Recv
+// ---------------------------------------------------------------------------
+TEST_F(UpdateCostModelSendRecvTest, ScopedNegationPreservesSendRecv)
+{
+    HcclAlgoParser parser;
+    ASSERT_EQ(parser.Parser("allReduce:not(sole{mesh})"), HCCL_SUCCESS);
+
+    EXPECT_EQ(UpdateCostModelWithAlgo(parser, cm_, ENGINE_TYPES), HCCL_SUCCESS);
+
+    // Send/Recv 不受 allReduce 取反影响，保留 count=1
+    EXPECT_EQ(GetAlgoCount(cm_, "AicpuSendSoleMesh"), 1);
+    EXPECT_EQ(GetAlgoCount(cm_, "AicpuRecvSoleMesh"), 1);
+    EXPECT_EQ(GetAlgoCount(cm_, "AicpuBatchSendRecvSoleMesh"), 1);
+    // allReduce 的 sole{mesh} 被排除
+    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllReduceSoleMesh"), 0);
+    // allReduce 的非 sole{mesh} 不受影响
+    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllReduceSequenceMeshNHR"), 1);
+}
+
+// ---------------------------------------------------------------------------
 // 测试 13：isExecNegated 找到算法后标记 OpType 已匹配
 // ---------------------------------------------------------------------------
 TEST_F(UpdateCostModelTest, NegatedExecutorMarksOpType)
