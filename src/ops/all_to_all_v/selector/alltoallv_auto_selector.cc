@@ -139,7 +139,7 @@ SelectorStatus AlltoAllVAutoSelector::SelectAicpuAlgo(
             || topoInfo->level0Topo == Level0Shape::MESH_1D_CLOS) {
             selectAlgName = "AicpuAllToAllVSoleMesh";
         } else {
-            HCCL_ERROR("[AlltoAllVAutoSelector][%s] hccl algo no match");
+            HCCL_ERROR("[AllToAllVAutoSelector][%s] hccl algo no match", __func__);
             return SelectorStatus::NOT_MATCH;
         }
     }
@@ -163,7 +163,7 @@ SelectorStatus AlltoAllVAutoSelector::SelectAicpuAlgo(
             selectAlgName = "AicpuAllToAllVSoleMeshMultiJetty";
         }
     } else {
-        HCCL_ERROR("[AlltoAllVAutoSelector][%s] hccl algo no match");
+        HCCL_ERROR("[AllToAllVAutoSelector][%s] hccl algo no match", __func__);
         return SelectorStatus::NOT_MATCH;
     }
 

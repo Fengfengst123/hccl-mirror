@@ -320,7 +320,7 @@ InsV2BroadcastSequenceExecutor<AlgTopoMatch, InsAlgTemplate0, InsAlgTemplate1, I
         CHK_PRT_RET(
             tempAlgParamsScatterIntra.allRankSliceSize.size() != rankSizeLevel0_,
             HCCL_ERROR(
-                "[InsV2BroadcastSequenceExecutor][tempAlgParamsScatterIntra] slice num[%u] is not equal to rank "
+                "[InsV2BroadcastSequenceExecutor][tempAlgParamsScatterIntra] slice num[%zu] is not equal to rank "
                 "size[%u].",
                 tempAlgParamsScatterIntra.allRankSliceSize.size(), rankSizeLevel0_),
             HcclResult::HCCL_E_INTERNAL);
@@ -354,7 +354,7 @@ InsV2BroadcastSequenceExecutor<AlgTopoMatch, InsAlgTemplate0, InsAlgTemplate1, I
         CHK_PRT_RET(
             tempAlgParamsScatterInter.allRankSliceSize.size() != rankSizeLevel1_,
             HCCL_ERROR(
-                "[InsV2BroadcastSequenceExecutor][tempAlgParamsScatterInter] slice num[%u] is not equal to rank "
+                "[InsV2BroadcastSequenceExecutor][tempAlgParamsScatterInter] slice num[%zu] is not equal to rank "
                 "size[%u].",
                 tempAlgParamsScatterInter.allRankSliceSize.size(), rankSizeLevel1_),
             HcclResult::HCCL_E_INTERNAL);

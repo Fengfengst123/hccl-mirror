@@ -339,7 +339,7 @@ HcclResult InsV2BatchSendRecvSoleExecutor<AlgTopoMatch, InsAlgTemplate>::GetSend
     }
     if (it->second.size() < channelNumPerRankPair_) {
         HCCL_ERROR(
-            "[InsV2BatchSendRecvSoleExecutor][GetSendChannel] Channel number[%u] is less than expected number[%u]",
+            "[InsV2BatchSendRecvSoleExecutor][GetSendChannel] Channel number[%zu] is less than expected number[%u]",
             it->second.size(), channelNumPerRankPair_);
         return HCCL_E_INTERNAL;
     }
@@ -369,7 +369,7 @@ HcclResult InsV2BatchSendRecvSoleExecutor<AlgTopoMatch, InsAlgTemplate>::GetRecv
     }
     if (it->second.size() < channelNumPerRankPair_) {
         HCCL_ERROR(
-            "[InsV2BatchSendRecvSoleExecutor][GetRecvChannel] Channel number[%u] is less than expected number[%u]",
+            "[InsV2BatchSendRecvSoleExecutor][GetRecvChannel] Channel number[%zu] is less than expected number[%u]",
             it->second.size(), channelNumPerRankPair_);
         return HCCL_E_INTERNAL;
     }

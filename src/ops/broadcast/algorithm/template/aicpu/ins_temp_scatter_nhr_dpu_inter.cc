@@ -102,7 +102,7 @@ HcclResult InsTempScatterNHRDPUInter::GetStepInfo(u32 step, u32 nSteps, AicpuNHR
             txSliceIdx = (txSliceIdx + rankSize - deltaSliceIndex) % rankSize;
         }
         HCCL_INFO(
-            "[InsTempScatterNHRDPUInter][GetStepInfo] rankSize[%u], myAlgRank[%d], sendTo Idx[%u]",
+            "[InsTempScatterNHRDPUInter][GetStepInfo] rankSize[%zu], myAlgRank[%d], sendTo Idx[%u]",
             subCommRanks_[0].size(), myAlgRank, sendTo);
         stepInfo.toRank = subCommRanks_[0].at(sendTo);
         stepInfo.nSlices = nSlices;
@@ -118,7 +118,7 @@ HcclResult InsTempScatterNHRDPUInter::GetStepInfo(u32 step, u32 nSteps, AicpuNHR
             rxSliceIdx = (rxSliceIdx + rankSize - deltaSliceIndex) % rankSize;
         }
         HCCL_INFO(
-            "[InsTempScatterNHRDPUInter][GetStepInfo] rankSize[%u], myAlgRank[%d], recvFrom Idx[%u]",
+            "[InsTempScatterNHRDPUInter][GetStepInfo] rankSize[%zu], myAlgRank[%d], recvFrom Idx[%u]",
             subCommRanks_[0].size(), myAlgRank, recvFrom);
         stepInfo.fromRank = subCommRanks_[0].at(recvFrom);
         stepInfo.nSlices = nSlices;
@@ -138,7 +138,8 @@ HcclResult InsTempScatterNHRDPUInter::KernelRun(
     SetRoot(tempAlgParams.root);
 
     HCCL_INFO(
-        "[InsTempScatterNHRDPUInter] queNum_ = [%d], threads size = [%d]", threadNum_, templateResource.threads.size());
+        "[InsTempScatterNHRDPUInter] queNum_ = [%d], threads size = [%zu]", threadNum_,
+        templateResource.threads.size());
 
     if (templateResource.threads.size() < 1) {
         HCCL_ERROR("[InsTempScatterNHRDPUInter] Rank[%u], required thread error.", myRank_);

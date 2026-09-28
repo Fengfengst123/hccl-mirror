@@ -297,7 +297,7 @@ HcclResult InsV2BatchSendRecvExecutor::GetSendChannel(u32 remoteRank, ChannelInf
     }
     if (it->second.size() < channelNumPerRankPair_) {
         HCCL_ERROR(
-            "[InsV2BatchSendRecvExecutor][GetSendChannel] Channel number[%u] is less than expected number[2]",
+            "[InsV2BatchSendRecvExecutor][GetSendChannel] Channel number[%zu] is less than expected number[2]",
             it->second.size());
         return HCCL_E_INTERNAL;
     }
@@ -318,7 +318,7 @@ HcclResult InsV2BatchSendRecvExecutor::GetRecvChannel(u32 remoteRank, ChannelInf
     }
     if (it->second.size() < channelNumPerRankPair_) {
         HCCL_ERROR(
-            "[InsV2BatchSendRecvExecutor][GetRecvChannel] Channel number[%u] is less than expected number[%u]",
+            "[InsV2BatchSendRecvExecutor][GetRecvChannel] Channel number[%zu] is less than expected number[%u]",
             it->second.size(), channelNumPerRankPair_);
         return HCCL_E_INTERNAL;
     }
