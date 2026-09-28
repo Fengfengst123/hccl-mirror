@@ -50,7 +50,7 @@ help:
 	@echo "HCCL Example: HcclBatchSendRecv"
 	@echo "==============================="
 	@echo ""
-	@echo "This example shows how to use HcclBatchSendRecv() for
+	@echo "This example shows how to use HcclBatchSendRecv() for"
 	@echo "point-to-point communication in a single process without MPI."
 	@echo ""
 	@echo "Targets:"
