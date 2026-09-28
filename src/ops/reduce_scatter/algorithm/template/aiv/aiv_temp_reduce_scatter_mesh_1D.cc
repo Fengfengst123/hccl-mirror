@@ -125,6 +125,7 @@ HcclResult AivTempReduceScatterMesh1D::KernelRun(
     aivReduceScatterArgs.sliceId = static_cast<uint32_t>(sliceId_);
     aivReduceScatterArgs.buffersIn = templateResource.aivCommInfoPtr;
     aivReduceScatterArgs.stream = param.stream;
+    aivReduceScatterArgs.hcclComm = static_cast<HcclComm>(param.hcclComm);
     aivReduceScatterArgs.isOpBase = (param.opMode == OpMode::OPBASE);
 
     u64 dataSize = tempAlgParams.inputSliceStride;

@@ -25,6 +25,7 @@
 #include "alg_env_config.h"
 #include "config_log.h"
 #include "dlsym_common.h"
+#include "dlhcomm_function.h"
 #include "adapter_error_manager_pub.h"
 #ifdef HCCL_STATIC_MODE
 #include "acl_rt.h"
@@ -155,6 +156,7 @@ constexpr u32 AIV_TASK_CONTEXT_SIZE = 50;
 constexpr u32 AIV_TASK_QUEUE_LIMIT = 2048;
 constexpr u32 AIV_FLAG_UB_ALIGN_SIZE = 32;
 constexpr u32 AIV_FLAG_PRINT_SIZE = 4096;
+constexpr u32 AIV_UDI_INFO_MAX_LENGTH = 256;
 
 static mutex g_mut;
 static condition_variable g_launchCv;
@@ -201,6 +203,7 @@ struct TaskParamAiv {
     HcclReduceOp reduceOp = HcclReduceOp::HCCL_REDUCE_RESERVED;
     HcclDataType dataType = HcclDataType::HCCL_DATA_TYPE_RESERVED;
     uint64_t beginTime = 0;
+    std::string udi;
 };
 
 static mutex g_aivTaskMutex;
@@ -208,6 +211,25 @@ static std::unordered_map<u64, std::deque<TaskParamAiv>> g_aivTaskByStream;
 
 thread_local HcclComm g_aivCurrentComm = nullptr;
 thread_local std::string g_aivCurrentCommName;
+
+static std::string GetAivUdiInfo(HcclComm hcclComm)
+{
+    if (hcclComm == nullptr) {
+        return "";
+    }
+    auto& hcommFunction = DlHcommFunction::GetInstance();
+    if (!hcommFunction.dlHcclConfigGetInfo) {
+        return "";
+    }
+    char udiBuf[AIV_UDI_INFO_MAX_LENGTH] = {0};
+    HcclResult ret = hcommFunction.dlHcclConfigGetInfo(
+        hcclComm, static_cast<HcclConfigType>(HCCL_CONFIG_TYPE_UDI), AIV_UDI_INFO_MAX_LENGTH, udiBuf);
+    if (ret != HCCL_SUCCESS) {
+        HCCL_DEBUG("[GetAivUdiInfo] HcclConfigGetInfo failed, ret[%d].", ret);
+        return "";
+    }
+    return std::string(udiBuf);
+}
 
 static void RegisterAivExceptionCallback()
 {
@@ -262,6 +284,7 @@ static HcclResult SaveAivDfxTaskInfo(const AivOpArgs& opArgs)
     taskInfo.reduceOp = opArgs.op;
     taskInfo.dataType = opArgs.dataType;
     taskInfo.beginTime = opArgs.beginTime;
+    taskInfo.udi = GetAivUdiInfo(opArgs.hcclComm);
 
     HCCL_INFO("Begin to SaveAivDfxTaskInfo taskType[%d]", static_cast<int32_t>(opArgs.cmdType));
     std::lock_guard<mutex> lock(g_aivTaskMutex);
@@ -339,9 +362,10 @@ void ProcessAivExceptionCallBack(aclrtExceptionInfo* exceptionInfo)
 
         std::stringstream taskSs;
         taskSs << "cmdType[" << static_cast<u32>(taskInfo.cmdType) << "], tag[" << taskInfo.tag << "], rank["
-               << taskInfo.rank << "], rankSize[" << taskInfo.rankSize << "], dataCount[" << taskInfo.size
-               << "], blockDim[" << taskInfo.blockDim << "], dataType[" << static_cast<u32>(taskInfo.dataType)
-               << "], beginTime[" << taskInfo.beginTime << "], flagMem[" << taskInfo.flagMem << "]";
+               << taskInfo.rank << "], hcclUdi[" << taskInfo.udi << "], rankSize[" << taskInfo.rankSize
+               << "], dataCount[" << taskInfo.size << "], blockDim[" << taskInfo.blockDim << "], dataType["
+               << static_cast<u32>(taskInfo.dataType) << "], beginTime[" << taskInfo.beginTime << "], flagMem["
+               << taskInfo.flagMem << "]";
         std::string taskInformation = taskSs.str();
 
         RPT_INPUT_ERR(
@@ -352,10 +376,11 @@ void ProcessAivExceptionCallBack(aclrtExceptionInfo* exceptionInfo)
 
     HCCL_ERROR(
         "[TaskExecStage][%s][AIV]Task run failed, errorCode[%u], para information is deviceId[%u], streamId[%u], "
-        "TaskId[%u], cmdType[%u], tag[%u], rank[%u], rankSize[%u], dataCount[%llu], blockDim[%u], "
+        "TaskId[%u], cmdType[%u], tag[%u], rank[%u], hcclUdi[%s], rankSize[%u], dataCount[%llu], blockDim[%u], "
         "dataType:[%u], beginTime:[%llu], flagMem[%p]",
         logKeywordL2, errorCode, deviceId, streamId, taskId, taskInfo.cmdType, taskInfo.tag, taskInfo.rank,
-        taskInfo.rankSize, taskInfo.size, taskInfo.blockDim, taskInfo.dataType, taskInfo.beginTime, taskInfo.flagMem);
+        taskInfo.udi.c_str(), taskInfo.rankSize, taskInfo.size, taskInfo.blockDim, taskInfo.dataType,
+        taskInfo.beginTime, taskInfo.flagMem);
 
     HCCL_ERROR(
         "[TaskExecStage][%s][AIV]Task run failed, para information is deviceId[%u], streamId[%u], "

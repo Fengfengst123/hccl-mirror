@@ -175,6 +175,7 @@ HcclResult InsV2RecvExecutor::OrchestrateImpl(const OpParam& param, const AlgRes
         aivSendArgs.count = currDataCount; // 需要传输的数据量
         aivSendArgs.buffersIn = resCtx.aivCommInfoPtr;
         aivSendArgs.stream = param.stream;
+        aivSendArgs.hcclComm = static_cast<HcclComm>(param.hcclComm);
         aivSendArgs.isOpBase = (opMode_ == OpMode::OPBASE);
         CHK_RET(CalNumBlocks(aivSendArgs.numBlocks, currDataCount * dataTypeSize_, param.numBlocksLimit));
 

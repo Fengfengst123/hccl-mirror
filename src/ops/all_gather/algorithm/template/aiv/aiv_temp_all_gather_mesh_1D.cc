@@ -135,6 +135,7 @@ HcclResult AivTempAllGatherMesh1D::KernelRun(
     aivAllGatherArgs.sliceId = static_cast<uint32_t>(sliceId_);
     aivAllGatherArgs.buffersIn = templateResource.aivCommInfoPtr;
     aivAllGatherArgs.stream = param.stream;
+    aivAllGatherArgs.hcclComm = static_cast<HcclComm>(param.hcclComm);
     aivAllGatherArgs.isOpBase = (param.opMode == OpMode::OPBASE);
 
     u64 dataSize = tempAlgParams.sliceSize;

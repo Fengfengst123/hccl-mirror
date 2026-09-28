@@ -89,6 +89,7 @@ HcclResult AivTempAlltoAllVMesh1D::KernelRun(
     aivAlltoAllVArgs.sliceId = static_cast<uint32_t>(sliceId_);
     aivAlltoAllVArgs.buffersIn = templateResource.aivCommInfoPtr;
     aivAlltoAllVArgs.stream = param.stream;
+    aivAlltoAllVArgs.hcclComm = static_cast<HcclComm>(param.hcclComm);
     aivAlltoAllVArgs.isOpBase = (param.opMode == OpMode::OPBASE);
 
     size_t count = tempRankSize_;

@@ -35,6 +35,7 @@ typedef HcclOpExpansionMode HcclConfigTypeOpExpansionMode;
 #define HCCL_CONFIG_TYPE_HCCL_ALGO 1
 #define HCCL_CONFIG_TYPE_UB_MULTI_CHANNEL_NUM 2
 #define HCCL_CONFIG_TYPE_DETERMINISTIC 3
+#define HCCL_CONFIG_TYPE_UDI 4
 
 #ifdef __cplusplus
 extern "C" {

@@ -143,6 +143,7 @@ HcclResult AivTempAllReduceMesh1DOneShot::KernelRun(
     aivAllReduceArgs.sliceId = static_cast<uint32_t>(sliceId_);
     aivAllReduceArgs.buffersIn = templateResource.aivCommInfoPtr;
     aivAllReduceArgs.stream = param.stream;
+    aivAllReduceArgs.hcclComm = static_cast<HcclComm>(param.hcclComm);
     aivAllReduceArgs.isOpBase = (param.opMode == OpMode::OPBASE);
 
     CHK_RET(CalNumBlocks(aivAllReduceArgs.numBlocks, tempAlgParams.sliceSize, param.numBlocksLimit));

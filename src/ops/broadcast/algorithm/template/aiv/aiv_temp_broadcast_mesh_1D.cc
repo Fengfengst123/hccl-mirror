@@ -151,6 +151,7 @@ HcclResult AivTempBroadcastMesh1D::KernelRun(
     aivBroadcastArgs.sliceId = static_cast<uint32_t>(sliceId_);
     aivBroadcastArgs.buffersIn = templateResource.aivCommInfoPtr;
     aivBroadcastArgs.stream = param.stream;
+    aivBroadcastArgs.hcclComm = static_cast<HcclComm>(param.hcclComm);
     aivBroadcastArgs.isOpBase = (param.opMode == OpMode::OPBASE);
 
     u64 dataSize = tempAlgParams.sliceSize;
