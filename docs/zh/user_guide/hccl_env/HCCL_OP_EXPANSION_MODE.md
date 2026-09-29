@@ -49,6 +49,8 @@
 
     调度模式指使用CCU作为调度器，向UB引擎调度UB WQE任务。调度模式下不使用CcuBuffer，直接在两个rank间进行片上内存到片上内存的数据传输。
 
+    该配置项支持Broadcast、AllGather、ReduceScatter、AllReduce、Reduce、Scatter、AlltoAll、AlltoAllV、AlltoAllVC、AllGatherV、ReduceScatterV算子。针对AllReduce、ReduceScatter、Reduce算子，数据类型仅支持int8、int16、int32、float16、float32、bfp16。针对ReduceScatterV算子，数据类型仅支持int16、int32、float16、float32、bfp16。其他通信算子支持的数据类型可参见对应的集合通信接口参考。
+
     针对单机通信场景的AllReduce、ReduceScatter、Reduce算子，当数据量超过一定值时，为防止性能下降，系统会自动切换为AI_CPU模式（该阈值并非固定，会根据算子运行模式及网络规模等因素有所调整）。
     
     此模式下，ReduceScatterV、AllGatherV算子仅支持单Server场景。
