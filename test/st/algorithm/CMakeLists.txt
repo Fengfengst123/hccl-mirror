@@ -20,6 +20,7 @@ set(TOP_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../..)
 enable_testing()
 
 option(ENABLE_GCOV "Enable gcov/lcov coverage instrumentation" OFF)
+option(ENABLE_EXPERIMENTAL "Register ST testcases requiring experimental libhccl (a3 BIRS/BIRS-V)" OFF)
 include(${HCCL_DEV_BASE}/cmake/intf_pub_gccnative.cmake)
 
 if(NOT DEFINED ST_TASKS)

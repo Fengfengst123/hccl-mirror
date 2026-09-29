@@ -11,6 +11,8 @@
 #include <vector>
 #include <atomic>
 #include <iostream>
+#include <mutex>
+#include <set>
 #include "acl/acl_rt.h"
 #include "acl/acl_base.h"
 #include "hccl/hccl_types.h"
@@ -25,6 +27,13 @@
 using namespace hccl;
 using namespace ops_hccl;
 thread_local uint32_t curr_dev_id = UINT32_MAX;
+
+namespace {
+// 登记 aclrtMalloc else 分支用宿主 malloc 模拟的"设备"指针, 使 aclrtFree 能真实释放, 避免仿真长跑泄漏
+// (ST 各 rank 在独立 std::thread 中并发调用, 需加锁)
+std::mutex g_stubMallocMutex;
+std::set<void*> g_stubMallocPtrs;
+} // namespace
 
 extern "C" unsigned int HcclLaunchAicpuKernel(OpParam* param);
 
@@ -58,19 +67,37 @@ aclError aclrtMallocHost(void** hostPtr, size_t size)
 // 打桩实现，仿真运行需标记内存是INPUT和OUTPUT
 aclError aclrtMalloc(void** devPtr, size_t size, aclrtMemMallocPolicy policy)
 {
+    if (devPtr == nullptr || size == 0) {
+        HCCL_ERROR("[aclrtMalloc] invalid input devPtr or size");
+        return ACL_ERROR_INVALID_PARAM;
+    }
     u32 memType = static_cast<u32>(policy);
     HcclSim::SimNpu& simNpu = HcclSim::SimWorld::Global()->GetSimNpuByRankId(curr_dev_id);
     if (memType == BUFFER_INPUT_MARK) {
         *devPtr = reinterpret_cast<void*>(simNpu.AllocMemory(BufferType::INPUT, size));
     } else if (memType == BUFFER_OUTPUT_MARK) {
         *devPtr = reinterpret_cast<void*>(simNpu.AllocMemory(BufferType::OUTPUT, size));
+    } else {
+        *devPtr = malloc(size);
+        if (*devPtr == nullptr) {
+            HCCL_ERROR("[aclrtMalloc] malloc failed, size[%zu]", size);
+            return ACL_ERROR_INTERNAL_ERROR;
+        }
+        std::lock_guard<std::mutex> lock(g_stubMallocMutex);
+        g_stubMallocPtrs.insert(*devPtr);
     }
     return ACL_SUCCESS;
 }
 
 aclError aclrtFree(void* devPtr)
 {
-    (void)devPtr;
+    {
+        std::lock_guard<std::mutex> lock(g_stubMallocMutex);
+        if (g_stubMallocPtrs.erase(devPtr) > 0) {
+            free(devPtr);
+            return ACL_SUCCESS;
+        }
+    }
     HCCL_WARNING("[%s] not support.", __func__);
     return ACL_SUCCESS;
 }

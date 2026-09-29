@@ -34,6 +34,9 @@ CMAKE_ARGS="-DBUILD_OPEN_PROJECT=ON"
 if [ "${ENABLE_GCOV}" == "on" ]; then
     CMAKE_ARGS="${CMAKE_ARGS} -DENABLE_GCOV=ON"
 fi
+if [ "${ENABLE_EXPERIMENTAL}" == "true" ]; then
+    CMAKE_ARGS="${CMAKE_ARGS} -DENABLE_EXPERIMENTAL=ON"
+fi
 if [ -n "${ST_TASKS}" ]; then
     CMAKE_ARGS="${CMAKE_ARGS} -DST_TASKS=${ST_TASKS}"
 fi

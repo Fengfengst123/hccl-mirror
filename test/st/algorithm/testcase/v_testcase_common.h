@@ -37,9 +37,9 @@ static inline u32 AnalyseRankSize(const TopoMeta& topoInfo)
 template <typename DispatchFn, typename VerifyFn>
 void RunVMultilevelTest(
     const TopoMeta& topoInfo, VDataDesTag vDataDes, std::function<void()> extraEnvSetup, DispatchFn dispatchFn,
-    VerifyFn verifyFn)
+    VerifyFn verifyFn, HcclDevType devType = HcclDevType::DEV_TYPE_950)
 {
-    SimWorld::Global()->Init(topoInfo, HcclDevType::DEV_TYPE_950);
+    SimWorld::Global()->Init(topoInfo, devType);
     setenv("HCCL_OP_EXPANSION_MODE", "AI_CPU", 1);
     if (extraEnvSetup) {
         extraEnvSetup();

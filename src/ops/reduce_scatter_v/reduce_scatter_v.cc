@@ -34,7 +34,12 @@ HcclResult HcclReduceScatterV(
     CHK_RET(IsOutPlaceDevice(isOutPlace));
     // 非95设备转到老流程
     if (!isOutPlace) {
+#ifdef ENABLE_EXPERIMENTAL
+        return ops_hccl_experimental::ReduceScatterVExperimental(
+            sendBuf, sendCounts, sendDispls, recvBuf, recvCount, dataType, op, comm, stream);
+#else
         return HcclReduceScatterVInner(sendBuf, sendCounts, sendDispls, recvBuf, recvCount, dataType, op, comm, stream);
+#endif
     }
     HcclUs startut = TIME_NOW(); // 走老流程的判断时间不统计在内
     // 入口的地方先解析环境变量，在初始化环境变量的时候需要设置为AICPU展开

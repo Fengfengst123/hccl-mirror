@@ -19,6 +19,7 @@
 #include "topo_host.h"
 #include "hcomm_host_profiling_dl.h"
 #include "reduce_scatter_birs_selector.h"
+#include "reduce_scatter_v_birs_selector.h"
 #include <algorithm>
 #include <future>
 #include <map>
@@ -31,6 +32,7 @@ using ops_hccl::AlgType;
 using ops_hccl::AlgTypeLevel1;
 using ops_hccl::CollAlgExecRegistry;
 using ops_hccl::CUSTOM_TIMEOUT;
+using ops_hccl::DATATYPE_SIZE_TABLE;
 using ops_hccl::ExecutorBase;
 using ops_hccl::g_binKernelHandle;
 using ops_hccl::g_notifiesMap;
@@ -41,7 +43,9 @@ using ops_hccl::haclrtMemcpy;
 using ops_hccl::HCCL_ALG;
 using ops_hccl::NotifyArray;
 using ops_hccl::OpParam;
+using ops_hccl::REDUCE_SCATTER_V_VECTOR_NUM;
 using ops_hccl::TopoInfo;
+
 bool IsStreamCapture(aclrtStream stream)
 {
     bool isCapture;
@@ -148,12 +152,69 @@ SelectAlgReduceScatter(HcclComm comm, OpParam& param, TopoInfo* topoInfo, AlgTyp
     return HCCL_SUCCESS;
 }
 
+HcclResult
+SelectAlgReduceScatterV(HcclComm comm, OpParam& param, TopoInfo* topoInfo, AlgType& algType, std::string& algName)
+{
+    (void)comm;
+    ValidateAndResetAlgLevel1(algType, "Reduce_Scatter_V");
+
+    const BirsVSelectResult birsVResult = DecideReduceScatterVBirsAlg(*topoInfo, algName);
+    const HcclResult birsVRet = BirsVSelectResultToCode(birsVResult);
+    if (birsVRet != HCCL_SUCCESS) {
+        if (birsVResult == BirsVSelectResult::vRejectServerNumZero) {
+            HCCL_ERROR(
+                "[%s] ReduceScatterVBIRS not supported: serverNum is 0, cannot compute ranks per server "
+                "(userRankSize[%u])",
+                __func__, topoInfo->userRankSize);
+        } else if (birsVResult == BirsVSelectResult::vRejectRanksPerServerLT4) {
+            HCCL_ERROR(
+                "[%s] ReduceScatterVBIRS not supported: userRankSize[%u] / serverNum[%u] < 4", __func__,
+                topoInfo->userRankSize, topoInfo->serverNum);
+        }
+        return birsVRet;
+    }
+
+    CHK_RET(FillAlgTagAndDebugInfo(param, topoInfo, algType, algName, "Reduce_Scatter_V"));
+    return HCCL_SUCCESS;
+}
+
 struct ThreadResources {
     ThreadHandle cpuTsThread = 0;
     ThreadHandle exportedAicpuTsThread = 0;
     ThreadHandle exportedCpuTsThread = 0;
     AlgResourceCtx* resCtx = nullptr;
+    void* vDataDesDevPtr = nullptr;
 };
+
+HcclResult PrepareReduceScatterVVarData(OpParam& param, TopoInfo* topoInfo, ThreadResources& threadRes)
+{
+    if (param.engine != COMM_ENGINE_AICPU_TS || param.opType != HCCL_CMD_REDUCE_SCATTER_V || param.varMemSize <= 0) {
+        return HCCL_SUCCESS;
+    }
+    u32 userRankSize = topoInfo->userRankSize;
+    CHK_PRT_RET(
+        param.varMemSize != REDUCE_SCATTER_V_VECTOR_NUM * userRankSize * sizeof(u64),
+        HCCL_ERROR(
+            "[PrepareReduceScatterVVarData] param.varMemSize[%llu] invalid, expected[%llu]", param.varMemSize,
+            REDUCE_SCATTER_V_VECTOR_NUM * userRankSize * sizeof(u64)),
+        HCCL_E_PARA);
+    ACLCHECK(aclrtMalloc(&threadRes.vDataDesDevPtr, param.varMemSize, ACL_MEM_MALLOC_HUGE_FIRST));
+    u64* devCounts = static_cast<u64*>(threadRes.vDataDesDevPtr);
+    aclError aclRet
+        = aclrtMemcpy(devCounts, param.varMemSize, param.varData, param.varMemSize, ACL_MEMCPY_HOST_TO_DEVICE);
+    if (aclRet != ACL_SUCCESS) {
+        HCCL_ERROR("acl interface return err %s:%d, retcode: %d.", __FILE__, __LINE__, aclRet);
+        aclError freeRet = aclrtFree(threadRes.vDataDesDevPtr);
+        if (freeRet != ACL_SUCCESS) {
+            HCCL_WARNING("[PrepareReduceScatterVVarData] aclrtFree vDataDesDevPtr failed, ret[%d]", freeRet);
+        }
+        threadRes.vDataDesDevPtr = nullptr;
+        return HCCL_E_RUNTIME;
+    }
+    param.vDataDes.counts = devCounts;
+    param.vDataDes.displs = devCounts + userRankSize;
+    return HCCL_SUCCESS;
+}
 
 HcclResult PrepareThreadResources(
     HcclComm comm, OpParam& param, std::unique_ptr<ExecutorBase>& executor, TopoInfo* topoInfo, AlgType& algType,
@@ -190,6 +251,9 @@ HcclResult PrepareThreadResources(
             curPtr, sizeof(ThreadHandle), &threadRes.exportedAicpuTsThread, sizeof(ThreadHandle),
             ACL_MEMCPY_HOST_TO_DEVICE));
     }
+
+    CHK_RET(PrepareReduceScatterVVarData(param, topoInfo, threadRes));
+
     return HCCL_SUCCESS;
 }
 
@@ -322,6 +386,8 @@ HcclResult ExecOpBirs(HcclComm comm, OpParam& param)
     std::string algName;
     if (param.opType == HCCL_CMD_REDUCE_SCATTER) {
         CHK_RET(SelectAlgReduceScatter(comm, param, topoInfo, algType, algName));
+    } else if (param.opType == HCCL_CMD_REDUCE_SCATTER_V) {
+        CHK_RET(SelectAlgReduceScatterV(comm, param, topoInfo, algType, algName));
     }
 
     std::unique_ptr<ExecutorBase> executor = CollAlgExecRegistry::Instance().GetAlgExec(algName);
@@ -333,7 +399,16 @@ HcclResult ExecOpBirs(HcclComm comm, OpParam& param)
     CHK_RET(PrepareThreadResources(comm, param, executor, topoInfo, algType, threadRes));
 
     if (param.engine == COMM_ENGINE_AICPU_TS) {
-        CHK_RET(LaunchAicpuKernel(comm, param, topoInfo, algName, threadRes));
+        // 先保存返回值再释放 vDataDesDevPtr, 保证 LaunchAicpuKernel 失败路径同样释放设备内存
+        HcclResult launchRet = LaunchAicpuKernel(comm, param, topoInfo, algName, threadRes);
+        if (threadRes.vDataDesDevPtr != nullptr) {
+            aclError aclRet = aclrtFree(threadRes.vDataDesDevPtr);
+            if (aclRet != ACL_SUCCESS) {
+                HCCL_WARNING("[ExecOpBirs] aclrtFree vDataDesDevPtr failed, ret[%d]", aclRet);
+            }
+            threadRes.vDataDesDevPtr = nullptr;
+        }
+        CHK_RET(launchRet);
     } else {
         CHK_RET(executor->Orchestrate(param, threadRes.resCtx));
         param.resCtx = threadRes.resCtx;
@@ -351,8 +426,13 @@ HcclResult ProcessA3(HcclComm comm, OpParam& param, uint64_t beginTime)
         CHK_SAFETY_FUNC_RET(strcpy_s(profInfo.algType, sizeof(profInfo.algType), algTypeStr.c_str()));
         CHK_SAFETY_FUNC_RET(strcpy_s(profInfo.commName, sizeof(profInfo.commName), param.commName));
         profInfo.beginTime = beginTime;
-        profInfo.dataCount = param.DataDes.count;
-        profInfo.dataType = static_cast<uint8_t>(param.DataDes.dataType);
+        if (param.opType == HCCL_CMD_REDUCE_SCATTER_V) {
+            profInfo.dataCount = param.outputSize / DATATYPE_SIZE_TABLE[param.vDataDes.dataType];
+            profInfo.dataType = static_cast<uint8_t>(param.vDataDes.dataType);
+        } else {
+            profInfo.dataCount = param.DataDes.count;
+            profInfo.dataType = static_cast<uint8_t>(param.DataDes.dataType);
+        }
         profInfo.cmdType = static_cast<uint8_t>(param.opType);
         CHK_PRT(HcommProfilingReportOp(profInfo));
 

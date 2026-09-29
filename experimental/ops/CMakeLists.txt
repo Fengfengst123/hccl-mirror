@@ -14,6 +14,7 @@ endif()
 
 add_subdirectory(op_common)
 add_subdirectory(reduce_scatter)
+add_subdirectory(reduce_scatter_v)
 add_subdirectory(all_reduce/example)
 
 set(EXPERIMENTAL_INCLUDE_LIST
@@ -25,6 +26,9 @@ set(EXPERIMENTAL_INCLUDE_LIST
     ${CMAKE_CURRENT_SOURCE_DIR}/reduce_scatter/
     ${CMAKE_CURRENT_SOURCE_DIR}/reduce_scatter/birs/
     ${CMAKE_CURRENT_SOURCE_DIR}/reduce_scatter/birs/template/
+    ${CMAKE_CURRENT_SOURCE_DIR}/reduce_scatter_v/
+    ${CMAKE_CURRENT_SOURCE_DIR}/reduce_scatter_v/birs/
+    ${CMAKE_CURRENT_SOURCE_DIR}/reduce_scatter_v/birs/template/
     ${CMAKE_CURRENT_SOURCE_DIR}/all_reduce/
     ${CMAKE_CURRENT_SOURCE_DIR}/all_reduce/example/
     ${CMAKE_CURRENT_SOURCE_DIR}/all_reduce/example/template/
@@ -43,6 +47,10 @@ if(TARGET scatter_aicpu_kernel)
         ${CMAKE_CURRENT_SOURCE_DIR}/reduce_scatter/birs/reduce_scatter_executor_base.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/reduce_scatter/birs/template/reduce_scatter_birs.cc
         ${CMAKE_CURRENT_SOURCE_DIR}/reduce_scatter/birs/template/reduce_scatter_birs_inter.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/reduce_scatter_v/birs/reduce_scatter_v_birs_executor.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/reduce_scatter_v/birs/reduce_scatter_v_executor_base.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/reduce_scatter_v/birs/template/reduce_scatter_v_birs.cc
+        ${CMAKE_CURRENT_SOURCE_DIR}/reduce_scatter_v/birs/template/reduce_scatter_v_birs_inter.cc
     )
 endif()
 # host 构建存在 hccl 目标; device 构建无 hccl 目标(仅 scatter_aicpu_kernel),此处需守护以兼容 device 复用本目录

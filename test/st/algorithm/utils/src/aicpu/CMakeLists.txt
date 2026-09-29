@@ -390,3 +390,13 @@ target_link_libraries(scatter_aicpu_kernel PRIVATE
     -Wl,--no-as-needed
     $<BUILD_INTERFACE:intf_llt_pub>
 )
+
+# 实验算法(ReduceScatter/ReduceScatterV BIRS、recursive_executor 等):
+# 复用 experimental/ops/CMakeLists.txt 中 if(TARGET scatter_aicpu_kernel) 的注入逻辑
+# (sources/includes/ENABLE_EXPERIMENTAL 定义), 与 host/device 构建保持单一来源;
+# ST 构建无 hccl 目标, 其 host 侧源码注入(if(TARGET hccl))自动跳过
+if(NOT DEFINED ASCEND_CANN_PACKAGE_PATH OR "${ASCEND_CANN_PACKAGE_PATH}" STREQUAL "")
+    set(ASCEND_CANN_PACKAGE_PATH ${ASCEND_HOME_PATH})
+endif()
+set(ENABLE_EXPERIMENTAL ON)
+add_subdirectory(${HCCL_DEV_BASE}/experimental/ops ${CMAKE_CURRENT_BINARY_DIR}/experimental_ops)

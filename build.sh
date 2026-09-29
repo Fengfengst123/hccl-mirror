@@ -532,6 +532,7 @@ function run_st() {
     log "Info: run_st ST_TASKS=${ST_TASKS}"
     export ENABLE_GCOV=${ENABLE_GCOV}
     export ST_TASKS=${ST_TASKS}
+    export ENABLE_EXPERIMENTAL=${ENABLE_EXPERIMENTAL}
     # 编译 ST 用例
     bash ${st_build_shell}
     local build_ret=$?
