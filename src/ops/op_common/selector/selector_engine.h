@@ -31,25 +31,13 @@ public:
     // 新选择器算子白名单: 本迭代仅支持 AllReduce/ReduceScatter/AllGather
     static bool IsOpSupported(HcclCMDType opType);
 
-    // 根据 algName 前缀推断所属引擎(OpExecuteConfig),使用 ENGINE_PREFIX_MAP
-    static OpExecuteConfig GetEngineByAlgName(const std::string& algName);
-
-    // 候选引擎列表转为前缀字符串列表
-    static std::vector<std::string> CandidateEnginesToPrefixes(const std::vector<OpExecuteConfig>& engines);
-
-    static std::vector<OpExecuteConfig> GetEnginePriority(OpExecuteConfig opExecuteConfig);
-
-    // 根据候选引擎列表过滤 CostModel: 不属于候选引擎的算法 count 置 -1
-    static HcclResult FilterCmByEngine(CostModel& cm, const std::vector<OpExecuteConfig>& candidateEngines);
-
 private:
     SelectorEngine() = default;
 
     HcclResult InitCostModel(HcclComm comm, TopoInfoWithNetLayerDetails* topoInfo, OpParam& param, CostModel*& cm);
 
-    // 生成 costTable 并调 tuner 改 cost（含 AllToAll(V/VC) dataType 特判）
-    HcclResult TunerEnrichCostTable(
-        HcclComm comm, CostModel* cm, CostTable& ct, TopoInfoWithNetLayerDetails* topoInfo, OpParam& param);
+    // 调 tuner 改 cost: Enrich 填 3D 名 + 插件改 cost(未加载或空表跳过, 含 AllToAll(V/VC) dataType 特判)
+    HcclResult TunerEnrichCostTable(HcclComm comm, CostTable& ct, const OpParam& param);
 
     HcclResult SelectMinCost(const CostTable& ct, OpParam& param, std::string& algName);
 

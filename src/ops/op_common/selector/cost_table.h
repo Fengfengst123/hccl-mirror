@@ -12,7 +12,6 @@
 #define HCCLV2_COLL_ALG_SELECTOR_COST_TABLE
 
 #include <functional>
-#include <mutex>
 #include <set>
 #include <string>
 #include <vector>
@@ -53,8 +52,11 @@ public:
 
     ~CostTableManager();
 
-    HcclResult
-    CostTableGen(CostModel& cm, CostTable& ct, const TopoInfoWithNetLayerDetails* topoInfo, const OpParam& opParam);
+    // 生成 costTable: Phase1 op 过滤+算cost → Phase2 opPriority 排他 → Phase3 HCCL_ALGO 收敛
+    HcclResult GenerateCostTable(
+        CostModel& cm, CostTable& ct, const TopoInfoWithNetLayerDetails* topoInfo, const OpParam& opParam);
+    // 释放 GenerateCostTable 内部申请的 costs(申请/释放同模块, 调用方 RAII 或收尾时调用)
+    static void FreeCostTable(CostTable& ct);
     HcclResult QueryUbUtil(
         CommTopo netType, u64 dataSize, OpExecuteConfig engine, float& utilization,
         HcclCMDType opType = HcclCMDType::HCCL_CMD_INVALID, AlgoType algoType = AlgoType::UNKNOWN) const;
@@ -62,21 +64,28 @@ public:
 private:
     CostTableManager() = default;
 
-    HcclResult InitAndFilterByAttrs(
-        CostModel& cm, CostTable& ct, const TopoInfoWithNetLayerDetails* topoInfo, const OpParam& opParam);
+    // Phase 1: op 过滤 + cost 计算(hcclPrio 与 ct.costs 对齐)
+    void OpFilterAndCalcCost(
+        CostModel& cm, CostTable& ct, const TopoInfoWithNetLayerDetails* topoInfo, const OpParam& opParam, u64 dataSize,
+        std::vector<int>& hcclPrio);
+    // Phase 2: opPriority 排他(tuner 跳过): keep = (opPriority 命中 ∪ preferred) ∩ 非否定
+    void ApplyOpPriority(
+        CostTable& ct, const OpParam& opParam, const TopoInfoWithNetLayerDetails* topoInfo, std::vector<int>& hcclPrio);
+    // Phase 3: HCCL_ALGO 优先级收敛(全否定层放开回退)
+    void ConvergeHcclAlgoTier(CostTable& ct, std::vector<int>& hcclPrio);
+    // 按 keepIndices 原地压缩 costs/hcclPrio
+    static void CompactCostTable(CostTable& ct, std::vector<int>& hcclPrio, const std::vector<int>& keepIndices);
     float CalcAlgCost(
         const std::string& algName, u64 dataSize, const CostAlgoParams& algoParams,
         HcclCMDType opType = HcclCMDType::HCCL_CMD_INVALID, const std::vector<AlgoType>& algoTypes = {},
-        const AlgNetMeta& meta = {}) const;
+        const AlgNetMeta& meta = {}, OpExecuteConfig engine = OpExecuteConfig::AICPU_TS) const;
 
     static void DumpCostTable(const CostTable& ct);
 
-    CostTable costTable_{nullptr, 0};
     static const std::vector<UbUtilEntry> closUbUtilTable_;
     static const std::vector<UbUtilEntry> meshUbUtilTable_;
     static const std::vector<UbUtilEntry> closOneJettyOnePortUbUtilTable_;
     static const std::vector<UbUtilEntry> closAivUbUtilTable_;
-    mutable std::mutex mu_;
 };
 
 } // namespace ops_hccl

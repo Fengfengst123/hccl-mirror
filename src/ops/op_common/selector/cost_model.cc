@@ -10,17 +10,16 @@
 
 #include "cost_model.h"
 
-#include <cstring>
+#include <algorithm>
 #include <new>
 #include <memory>
 #include <set>
 
 #include "coll_alg_v2_exec_registry.h"
 #include "alg_attrs_registry.h"
-#include "selector_engine.h"
 #include "auto_selector_base.h"
 #include "alg_parse.h"
-// tuner 插件查询(HcclTunerIsLoaded)仅 host 侧 InitCostModel 使用(已在 AICPU_COMPILE 保护内);
+// tuner 插件查询(HcclTunerIsLoaded)仅 host 侧选路管线(InitModel 等 phase)使用(已在 AICPU_COMPILE 保护内);
 // device 核库(scatter_aicpu_kernel)的 include 路径不含 src/common/tuner, 无保护会 fatal error(2026-09-21 PR#3286 CI
 // 实证)
 #ifndef AICPU_COMPILE
@@ -66,7 +65,7 @@ HcclResult AddAlgToAllAlgos(
     }
     allAlgos->algElements[allAlgos->count] = {algName, executorName, templateName, templateNum, opType};
     ++allAlgos->count;
-    HCCL_DEBUG(
+    HCCL_INFO(
         "[AllAlgos] add algName=%s executorName=%s templateNum=%d opType=%d, total=%d.", algName, executorName,
         templateNum, opType, allAlgos->count);
     return HcclResult::HCCL_SUCCESS;
@@ -114,7 +113,7 @@ void CostModelManager::FreeCostModel(CostModel& costModel)
 void CostModelManager::InitBandwidth()
 {
 #ifndef AICPU_COMPILE
-    HCCL_DEBUG("[CostModelManager] InitBandwidth.");
+    HCCL_INFO("[CostModelManager] InitBandwidth.");
     localCopyBw_ = 1400.0f * 1000 * 1000 * 1000;
     localReduceBw_ = 900.0f * 1000 * 1000 * 1000;
     crossChipBw_ = 56.0f * 1000 * 1000 * 1000;
@@ -123,7 +122,7 @@ void CostModelManager::InitBandwidth()
     ccuLocalReduceBw_ = 35.0f * 1000 * 1000 * 1000;
     ccuCircleLocalCopyBw_ = 47.6f * 1024 * 1024 * 1024;
     ccuCircleLocalReduceBw_ = 47.6f * 1024 * 1024 * 1024;
-    HCCL_DEBUG(
+    HCCL_INFO(
         "[CostModelManager] localCopyBw=%f localReduceBw=%f crossChipBw=%f crossChipReduceBw=%f "
         "ccuLocalCopyBw=%f ccuLocalReduceBw=%f ccuCircleLocalCopyBw=%f ccuCircleLocalReduceBw=%f.",
         localCopyBw_, localReduceBw_, crossChipBw_, crossChipReduceBw_, ccuLocalCopyBw_, ccuLocalReduceBw_,
@@ -133,12 +132,14 @@ void CostModelManager::InitBandwidth()
 
 void CostModelManager::InitDpuSftCost()
 {
-    HCCL_DEBUG("[CostModelManager] InitDpuSftCost.");
     preSync_ = 0.000016;
     channelFence_ = 0.000002;
     threadFence_ = 0.000006;
     sndRcvCall_ = 0.000006;
     hDLatency_ = 0.000014; // 单位是s，14u，包括D2H和H2D的处理
+    HCCL_INFO(
+        "[CostModelManager] InitDpuSftCost preSync=%f channelFence=%f threadFence=%f sndRcvCall=%f hDLatency=%f.",
+        preSync_, channelFence_, threadFence_, sndRcvCall_, hDLatency_);
 }
 
 CostModelManager::RankSizePerLevel
@@ -172,6 +173,9 @@ TopoMatchResult CheckAlgoMatchTopoWithReason(
     TopoMatchResult result;
     const AlgAttrs* attrs = AlgAttrsRegistry::Instance().Get(algName);
     if (attrs == nullptr) {
+        // 无 attrs 属注册异常, 视为不匹配(正常路径已在 step2 提前过滤)
+        result.matched = false;
+        result.reason = "no attrs";
         return result;
     }
 
@@ -296,11 +300,154 @@ bool IsAlgoMatchTopo(const std::string& algName, const TopoInfoWithNetLayerDetai
 #endif
 
 #ifndef AICPU_COMPILE
+HcclResult CostModelManager::GenerateCostModel(
+    HcclComm comm, CostModel& cm, const OpParam& param, TopoInfoWithNetLayerDetails* topoInfo,
+    const std::vector<OpExecuteConfig>& candidateEngines, const std::vector<std::string>& candidatePrefixes)
+{
+    // 通信域阶段选路管线: step1-5 按序执行
+    CHK_RET(InitModel(cm));
+    FilterByEngine(cm, candidateEngines);
+    CHK_RET(ApplyHcclAlgoPriority(comm, cm, candidatePrefixes));
+    CHK_RET(FilterByTopoAndCalibrate(comm, cm, param, topoInfo));
+    ApplyTopoPriority(cm, topoInfo);
+    return HcclResult::HCCL_SUCCESS;
+}
+
+HcclResult CostModelManager::InitModel(CostModel& cm)
+{
+    const AllAlgos& allAlgos = *GetAllAlgos();
+    if (allAlgos.count <= 0) {
+        HCCL_WARNING("[CostModelManager] InitModel with empty AllAlgos.");
+        return HcclResult::HCCL_SUCCESS;
+    }
+
+    cm.costAlgoParams = new (std::nothrow) CostAlgoParams[allAlgos.count]();
+    if (cm.costAlgoParams == nullptr) {
+        HCCL_ERROR("[CostModelManager] alloc CostAlgoParams failed, algNum=%d.", allAlgos.count);
+        return HcclResult::HCCL_E_PARA;
+    }
+    // 条目与 allAlgos 对齐, count=1 待处理
+    for (int i = 0; i < allAlgos.count; ++i) {
+        cm.costAlgoParams[i].algName = allAlgos.algElements[i].algName;
+        cm.costAlgoParams[i].count = 1;
+    }
+    cm.count = allAlgos.count;
+    return HcclResult::HCCL_SUCCESS;
+}
+
+void CostModelManager::FilterByEngine(CostModel& cm, const std::vector<OpExecuteConfig>& candidateEngines)
+{
+    std::set<OpExecuteConfig> engineSet(candidateEngines.begin(), candidateEngines.end());
+    int kept = 0;
+    int filtered = 0;
+    for (int i = 0; i < cm.count; ++i) {
+        const char* algName = cm.costAlgoParams[i].algName;
+        // 引擎取 attrs->engine(注册期解析缓存)
+        const AlgAttrs* attrs = (algName != nullptr) ? AlgAttrsRegistry::Instance().Get(algName) : nullptr;
+        if (attrs == nullptr) {
+            // 无名或无 attrs 属注册异常, 提前过滤
+            cm.costAlgoParams[i].count = 0;
+            HCCL_INFO("[CostModelManager] algName=%s filtered: no attrs.", algName != nullptr ? algName : "(null)");
+            ++filtered;
+            continue;
+        }
+        if (engineSet.count(attrs->engine) == 0) {
+            cm.costAlgoParams[i].count = 0;
+            HCCL_INFO(
+                "[CostModelManager] algName=%s filtered: engine=%d not in candidate engines.", algName,
+                static_cast<int>(attrs->engine));
+            ++filtered;
+        } else {
+            ++kept;
+        }
+    }
+    HCCL_INFO("[CostModelManager] FilterByEngine done, kept=%d filtered=%d.", kept, filtered);
+}
+
+HcclResult
+CostModelManager::ApplyHcclAlgoPriority(HcclComm comm, CostModel& cm, const std::vector<std::string>& candidatePrefixes)
+{
+    // 只打标, 过滤收敛在 costtable Phase 3
+    CHK_RET(MarkHcclAlgoPriority(comm, cm, candidatePrefixes));
+    return HcclResult::HCCL_SUCCESS;
+}
+
+HcclResult CostModelManager::FilterByTopoAndCalibrate(
+    HcclComm comm, CostModel& cm, const OpParam& param, TopoInfoWithNetLayerDetails* topoInfo)
+{
+    // 条目与 allAlgos 对齐(InitModel 保证), opType 取自 AlgElement
+    const AllAlgos& allAlgos = *GetAllAlgos();
+    const bool tunerLoaded = HcclTunerIsLoaded();
+    int writeIdx = 0;
+    for (int i = 0; i < cm.count; ++i) {
+        // step2 已过滤的条目(非候选引擎/无名/无 attrs)直接跳过
+        if (cm.costAlgoParams[i].count == 0) {
+            continue;
+        }
+        const AlgElement& alg = allAlgos.algElements[i];
+        std::string algName = (alg.algName != nullptr) ? alg.algName : "";
+
+        // preferred 算法或 tuner 接管时跳过软策略 customCheck
+        bool needSoftCheck = !(tunerLoaded || cm.costAlgoParams[i].hcclAlgoPriority > 0);
+        if (!IsAlgoMatchTopo(algName, topoInfo, needSoftCheck)) {
+            // preferred 被 topo 硬过滤即 HCCL_ALGO 未生效, WARNING 提示回退自动选路
+            if (cm.costAlgoParams[i].hcclAlgoPriority > 0) {
+                HCCL_WARNING(
+                    "[CostModelManager] HCCL_ALGO configured algName=%s skipped by topo filter, fallback to "
+                    "auto selection.",
+                    algName.c_str());
+            }
+            continue;
+        }
+
+        std::unique_ptr<InsCollAlgBase> exec = CollAlgExecRegistryV2::Instance().GetAlgExec(alg.opType, alg.algName);
+        if (exec == nullptr) {
+            HCCL_WARNING(
+                "[CostModelManager] executor not registered, skip algName=%s opType=%d.", alg.algName, alg.opType);
+            continue;
+        }
+
+        std::vector<CostModelParam> params = exec->CalcCostCoeff(comm, topoInfo, alg.algName, param);
+        if (params.empty()) {
+            HCCL_WARNING("[CostModelManager] CalcCostCoeff uncalibrated, skip algName=%s.", alg.algName);
+            continue;
+        }
+        int paramCount = static_cast<int>(params.size());
+
+        // 深拷贝 param 到堆，costModel 持有独立内存所有权
+        CostModelParam* ownedParam = new (std::nothrow) CostModelParam[paramCount];
+        if (ownedParam == nullptr) {
+            HCCL_ERROR("[CostModelManager] alloc ownedParam failed, algName=%s count=%d.", alg.algName, paramCount);
+            continue;
+        }
+        std::copy(params.begin(), params.end(), ownedParam);
+
+        // 原地压缩(writeIdx<=i), 保留 hcclAlgoPriority, count 变为 param 组数
+        cm.costAlgoParams[writeIdx].algName = alg.algName;
+        cm.costAlgoParams[writeIdx].param = ownedParam;
+        cm.costAlgoParams[writeIdx].count = paramCount;
+        cm.costAlgoParams[writeIdx].hcclAlgoPriority = cm.costAlgoParams[i].hcclAlgoPriority;
+        ++writeIdx;
+    }
+    HCCL_INFO("[CostModelManager] FilterByTopoAndCalibrate done, total=%d calibrated=%d.", cm.count, writeIdx);
+    cm.count = writeIdx;
+    if (cm.count == 0) {
+        delete[] cm.costAlgoParams;
+        cm.costAlgoParams = nullptr;
+    }
+    return HcclResult::HCCL_SUCCESS;
+}
+
 // 从已过滤的算法中筛选优先级算法。按 (opType, engine) 分组，仅在有 priority 匹配的组内过滤。
 // 不同引擎（AICPU/CCU/AIV）的 priority 互不影响，避免 AIV 算法被 AICPU/CCU 的 priority 规则误删。
-// 被用户显式配置（HCCL_ALGO 覆盖）或 tuner 接管的组不做排他（读 costAlgoParams[].needSoftPolicyCheck）。
-__attribute__((unused)) static void ApplyTopoPriority(CostModel& costModel, const TopoInfoWithNetLayerDetails* topoInfo)
+// tuner 接管的组不做排他；HCCL_ALGO 正向指定的算法不删（优先级在 costtable 阶段收敛）。
+void CostModelManager::ApplyTopoPriority(CostModel& costModel, const TopoInfoWithNetLayerDetails* topoInfo)
 {
+    if (costModel.count <= 0) {
+        return;
+    }
+    const bool tunerLoaded = HcclTunerIsLoaded();
+
     // 1. 收集每个 (opType, engine) 的 priority 匹配索引
     std::map<std::pair<HcclCMDType, OpExecuteConfig>, std::vector<int>> priorityByKey;
     for (int i = 0; i < costModel.count; ++i) {
@@ -311,20 +458,22 @@ __attribute__((unused)) static void ApplyTopoPriority(CostModel& costModel, cons
         }
     }
 
-    // 2. 对有 priority 匹配的 (opType, engine) 组，只保留匹配的算法；被用户显式配置/tuner 接管的组跳过排他
+    // 2. 对有 priority 匹配的 (opType, engine) 组，只保留匹配的算法；tuner 接管的组跳过排他；
+    //    HCCL_ALGO 正向指定(preferred)的算法不删，保证优先级在 costtable 阶段可收敛
     std::set<int> toRemove;
     for (auto& [key, indices] : priorityByKey) {
         auto [opType, engine] = key;
-        if (!costModel.costAlgoParams[indices[0]].needSoftPolicyCheck) {
+        if (tunerLoaded) {
             HCCL_INFO(
-                "[CostModelManager] opType=%d engine=%d covered by explicit config/tuner, skip topoPriority.",
-                static_cast<int>(opType), static_cast<int>(engine));
+                "[CostModelManager] opType=%d engine=%d covered by tuner, skip topoPriority.", static_cast<int>(opType),
+                static_cast<int>(engine));
             continue;
         }
         std::set<int> keepSet(indices.begin(), indices.end());
         for (int i = 0; i < costModel.count; ++i) {
             const AlgAttrs* attrs = AlgAttrsRegistry::Instance().Get(costModel.costAlgoParams[i].algName);
-            if (attrs != nullptr && attrs->opType == opType && attrs->engine == engine && keepSet.count(i) == 0) {
+            if (attrs != nullptr && attrs->opType == opType && attrs->engine == engine && keepSet.count(i) == 0
+                && costModel.costAlgoParams[i].hcclAlgoPriority <= 0) {
                 toRemove.insert(i);
             }
         }
@@ -357,95 +506,8 @@ __attribute__((unused)) static void ApplyTopoPriority(CostModel& costModel, cons
     costModel.count = newCount;
     HCCL_INFO("[CostModelManager] topoPriority applied, kept=%d.", costModel.count);
 }
+
 #endif
-
-HcclResult CostModelManager::InitCostModel(
-    HcclComm comm, TopoInfoWithNetLayerDetails* topoInfo, CostModel& costModel, const OpParam& param)
-{
-#ifndef AICPU_COMPILE
-    const AllAlgos& allAlgos = *GetAllAlgos();
-    int algNum = allAlgos.count;
-    if (algNum <= 0) {
-        HCCL_WARNING("[CostModelManager] InitCostModel with empty AllAlgos.");
-        return HcclResult::HCCL_SUCCESS;
-    }
-
-    costModel.costAlgoParams = new (std::nothrow) CostAlgoParams[algNum];
-    if (costModel.costAlgoParams == nullptr) {
-        HCCL_ERROR("[CostModelManager] alloc CostAlgoParams failed, algNum=%d.", algNum);
-        return HcclResult::HCCL_E_PARA;
-    }
-    costModel.count = 0;
-
-    // 用户显式配置（HCCL_ALGO 覆盖的 opType）或 tuner 插件加载时，软策略检查让位
-    bool tunerLoaded = HcclTunerIsLoaded();
-    std::set<HcclCMDType> coveredOps;
-    bool allCovered = false;
-    CHK_RET(GetConfiguredOpTypes(comm, coveredOps, allCovered));
-    if (tunerLoaded || allCovered || !coveredOps.empty()) {
-        HCCL_INFO(
-            "[CostModelManager] soft policy check skipped: tunerLoaded=%d allCovered=%d coveredOps=%zu.",
-            static_cast<int>(tunerLoaded), static_cast<int>(allCovered), coveredOps.size());
-    }
-
-    for (int i = 0; i < algNum; ++i) {
-        const AlgElement& alg = allAlgos.algElements[i];
-        std::string algName = (alg.algName != nullptr) ? alg.algName : "";
-
-        // 软策略让位一次性判定并随 costModel 携带，costtable 阶段直接读字段
-        bool needSoftCheck = !(tunerLoaded || allCovered || coveredOps.count(alg.opType) > 0);
-        if (!IsAlgoMatchTopo(algName, topoInfo, needSoftCheck)) {
-            HCCL_INFO("[CostModelManager] algName=%s skipped by topo filter.", algName.c_str());
-            continue;
-        }
-
-        std::unique_ptr<InsCollAlgBase> exec = CollAlgExecRegistryV2::Instance().GetAlgExec(alg.opType, alg.algName);
-        if (exec == nullptr) {
-            HCCL_WARNING(
-                "[CostModelManager] executor not registered, skip algName=%s opType=%d.", alg.algName, alg.opType);
-            continue;
-        }
-
-        std::vector<CostModelParam> params = exec->CalcCostCoeff(comm, topoInfo, alg.algName, param);
-        if (params.empty()) {
-            HCCL_WARNING("[CostModelManager] CalcCostCoeff uncalibrated, skip algName=%s.", alg.algName);
-            continue;
-        }
-        int paramCount = static_cast<int>(params.size());
-
-        // 深拷贝 param 到堆，costModel 持有独立内存所有权
-        CostModelParam* ownedParam = new (std::nothrow) CostModelParam[paramCount];
-        if (ownedParam == nullptr) {
-            HCCL_ERROR("[CostModelManager] alloc ownedParam failed, algName=%s count=%d.", alg.algName, paramCount);
-            continue;
-        }
-        std::copy(params.begin(), params.end(), ownedParam);
-
-        CostAlgoParams cap;
-        cap.algName = alg.algName;
-        cap.param = ownedParam;
-        cap.count = paramCount;
-        cap.needSoftPolicyCheck = needSoftCheck;
-        costModel.costAlgoParams[costModel.count] = cap;
-        ++costModel.count;
-    }
-
-    if (costModel.count == 0) {
-        delete[] costModel.costAlgoParams;
-        costModel.costAlgoParams = nullptr;
-    } else {
-        ApplyTopoPriority(costModel, topoInfo);
-    }
-
-    HCCL_INFO("[CostModelManager] InitCostModel done, total=%d calibrated=%d.", algNum, costModel.count);
-    return HcclResult::HCCL_SUCCESS;
-#else
-    (void)comm;
-    (void)topoInfo;
-    (void)costModel;
-    return HcclResult::HCCL_SUCCESS;
-#endif
-}
 
 void CostModelManager::CalcMeshParam(float n, CommTopo netType, int portNum, u32 rankSize, float& A, bool isPod)
 {
@@ -498,7 +560,7 @@ void CostModelManager::CalcLocalCopyParams(float n, EngineType scene, float& B)
         bw = ccuCircleLocalCopyBw_;
     }
     B = n / bw;
-    HCCL_DEBUG("[CostModelManager] CalcLocalCopyParams n=%f scene=%d B=%f.", n, static_cast<int>(scene), B);
+    HCCL_INFO("[CostModelManager] CalcLocalCopyParams n=%f scene=%d B=%f.", n, static_cast<int>(scene), B);
     return;
 }
 
@@ -511,7 +573,7 @@ void CostModelManager::CalcLocalReduceParams(float n, EngineType scene, float& B
         bw = ccuCircleLocalReduceBw_;
     }
     B = n / bw;
-    HCCL_DEBUG("[CostModelManager] CalcLocalReduceParams n=%f scene=%d B=%f.", n, static_cast<int>(scene), B);
+    HCCL_INFO("[CostModelManager] CalcLocalReduceParams n=%f scene=%d B=%f.", n, static_cast<int>(scene), B);
     return;
 }
 
@@ -525,7 +587,7 @@ void CostModelManager::CalcLatencyParams(int taskNum, EngineType engine, float& 
     } else if (engine == EngineType::CCU) {
         C = 0.000002 * taskNum; // 单位是s，10u
     }
-    HCCL_DEBUG("[CostModelManager] CalcLatencyParams taskNum=%d engine=%d C=%f.", taskNum, static_cast<int>(engine), C);
+    HCCL_INFO("[CostModelManager] CalcLatencyParams taskNum=%d engine=%d C=%f.", taskNum, static_cast<int>(engine), C);
     return;
 }
 
@@ -534,7 +596,7 @@ void CostModelManager::CalcDpuLatencyParams(int stepNum, int syncNum, int channe
     float stepC = preSync_ * syncNum + channelFence_ * channelNum + threadFence_;
     float sndRcvC = sndRcvnum * sndRcvCall_;
     C = stepNum * stepC + sndRcvC + hDLatency_;
-    HCCL_DEBUG(
+    HCCL_INFO(
         "[CostModelManager] CalcDpuLatencyParams stepNum=%d syncNum=%d channelNum=%d sndRcvnum=%d C=%f.", stepNum,
         syncNum, channelNum, sndRcvnum, C);
     return;
@@ -550,7 +612,7 @@ void CostModelManager::CalcLaunchParams(int taskNum, EngineType engine, float& D
     } else if (engine == EngineType::CCU) {
         D = 0;
     }
-    HCCL_DEBUG("[CostModelManager] CalcLaunchParams taskNum=%d engine=%d D=%f.", taskNum, static_cast<int>(engine), D);
+    HCCL_INFO("[CostModelManager] CalcLaunchParams taskNum=%d engine=%d D=%f.", taskNum, static_cast<int>(engine), D);
     return;
 }
 

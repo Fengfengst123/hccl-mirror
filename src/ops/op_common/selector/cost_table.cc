@@ -11,19 +11,15 @@
 #include "cost_table.h"
 
 #include <algorithm>
-#include <cctype>
-#include <cstdio>
-#include <functional>
 #include <new>
-#include <limits>
 
 #include "auto_selector_base.h"
 #include "hccl_aiv_utils.h"
-#include "selector_engine.h"
 #include "alg_attrs_registry.h"
 #include "alg_parse.h"
 #include "coll_alg_v2_exec_registry.h"
 #include "order_preserved_common.h"
+#include "tuner_setup.h"
 
 namespace ops_hccl {
 
@@ -183,10 +179,12 @@ void CostTableManager::DumpCostTable(const CostTable& ct)
     HCCL_INFO("====== [DFX_CostTableDump] dump end ======");
 }
 
-HcclResult CostTableManager::InitAndFilterByAttrs(
+HcclResult CostTableManager::GenerateCostTable(
     CostModel& cm, CostTable& ct, const TopoInfoWithNetLayerDetails* topoInfo, const OpParam& opParam)
 {
-    HCCL_INFO("[InitAndFilterByAttrs] filter, algCount=%d.", cm.count);
+    // 运行时阶段选路管线(通信域阶段见 cost_model.h):
+    // Phase1 过滤+算cost → Phase2 opPriority 排他 → Phase3 HCCL_ALGO 收敛 → tuner 改cost → SelectMinCost
+    HCCL_INFO("[CostTableManager] generate cost table, algCount=%d.", cm.count);
     ct.costs = nullptr;
     ct.count = 0;
     if (cm.count <= 0) {
@@ -194,14 +192,39 @@ HcclResult CostTableManager::InitAndFilterByAttrs(
     }
     ct.costs = new (std::nothrow) AlgoCost[cm.count]();
     if (ct.costs == nullptr) {
-        HCCL_ERROR("[InitAndFilterByAttrs] alloc AlgoCost failed, count=%d.", cm.count);
+        HCCL_ERROR("[CostTableManager] alloc AlgoCost failed, count=%d.", cm.count);
         return HcclResult::HCCL_E_PARA;
     }
 
     u64 dataSize = CalcCostTableDataSize(opParam, topoInfo->userRankSize);
-    // 软策略开关随 costModel 字段携带（InitCostModel 一次性判定），同表内按 opType 一致
-    bool needSoftCheck = true;
+    // 与 ct.costs 对齐的 HCCL_ALGO 优先级(1=正向指定/-1=否定指定/0=未配置), Phase 2/3 收敛用
+    std::vector<int> hcclPrio;
+    hcclPrio.reserve(static_cast<size_t>(cm.count));
 
+    OpFilterAndCalcCost(cm, ct, topoInfo, opParam, dataSize, hcclPrio); // Phase 1
+    if (!HcclTunerIsLoaded()) {
+        ApplyOpPriority(ct, opParam, topoInfo, hcclPrio); // Phase 2
+    }
+    ConvergeHcclAlgoTier(ct, hcclPrio); // Phase 3
+
+    DumpCostTable(ct);
+    return HcclResult::HCCL_SUCCESS;
+}
+
+void CostTableManager::FreeCostTable(CostTable& ct)
+{
+    delete[] ct.costs;
+    ct.costs = nullptr;
+    ct.count = 0;
+}
+
+void CostTableManager::OpFilterAndCalcCost(
+    CostModel& cm, CostTable& ct, const TopoInfoWithNetLayerDetails* topoInfo, const OpParam& opParam, u64 dataSize,
+    std::vector<int>& hcclPrio)
+{
+    const bool tunerLoaded = HcclTunerIsLoaded();
+    int preferred = 0;
+    int negated = 0;
     for (int i = 0; i < cm.count; ++i) {
         if (cm.costAlgoParams[i].count <= 0) {
             continue;
@@ -210,18 +233,27 @@ HcclResult CostTableManager::InitAndFilterByAttrs(
         std::string name = (algName != nullptr) ? algName : "";
         const AlgAttrs* attrs = AlgAttrsRegistry::Instance().Get(name);
         if (attrs == nullptr) {
-            HCCL_INFO("[InitAndFilterByAttrs] algName=%s filtered: no attrs.", name.c_str());
+            HCCL_INFO("[CostTableManager] algName=%s filtered: no attrs.", name.c_str());
             continue;
         }
         if (attrs->opType != opParam.opType) {
-            HCCL_DEBUG("[InitAndFilterByAttrs] algName=%s filtered: opType mismatch.", name.c_str());
+            HCCL_DEBUG("[CostTableManager] algName=%s filtered: opType mismatch.", name.c_str());
             continue;
         }
 
-        // normal filter
-        auto opResult = CheckAlgoMatchOpWithReason(*attrs, opParam, topoInfo, cm.costAlgoParams[i].needSoftPolicyCheck);
+        // normal filter: preferred 算法或 tuner 接管时跳过软策略 opCustomCheck
+        bool needSoftCheck = !(tunerLoaded || cm.costAlgoParams[i].hcclAlgoPriority > 0);
+        auto opResult = CheckAlgoMatchOpWithReason(*attrs, opParam, topoInfo, needSoftCheck);
         if (!opResult.matched) {
-            HCCL_INFO("[InitAndFilterByAttrs] algName=%s filtered: %s.", name.c_str(), opResult.reason.c_str());
+            // preferred 被 op 硬过滤即 HCCL_ALGO 未生效, WARNING 提示回退自动选路
+            if (cm.costAlgoParams[i].hcclAlgoPriority > 0) {
+                HCCL_WARNING(
+                    "[CostTableManager] HCCL_ALGO configured algName=%s filtered: %s, fallback to auto "
+                    "selection.",
+                    name.c_str(), opResult.reason.c_str());
+            } else {
+                HCCL_INFO("[CostTableManager] algName=%s filtered: %s.", name.c_str(), opResult.reason.c_str());
+            }
             continue;
         }
 
@@ -232,61 +264,109 @@ HcclResult CostTableManager::InitAndFilterByAttrs(
             meta = exec->GetAlgNetMeta(topoInfo, opParam, name.c_str());
         }
 
-        float cost = CalcAlgCost(name, dataSize, cm.costAlgoParams[i], opParam.opType, attrs->algoTypes, meta);
+        float cost
+            = CalcAlgCost(name, dataSize, cm.costAlgoParams[i], opParam.opType, attrs->algoTypes, meta, attrs->engine);
         ct.costs[ct.count].algName = algName;
         ct.costs[ct.count].cost = cost;
         ++ct.count;
-        needSoftCheck = needSoftCheck && cm.costAlgoParams[i].needSoftPolicyCheck;
-        HCCL_INFO("[InitAndFilterByAttrs] algName=%s cost=%f.", name.c_str(), cost);
+        hcclPrio.push_back(cm.costAlgoParams[i].hcclAlgoPriority);
+        if (cm.costAlgoParams[i].hcclAlgoPriority > 0) {
+            ++preferred;
+        } else if (cm.costAlgoParams[i].hcclAlgoPriority < 0) {
+            ++negated;
+        }
     }
+    HCCL_INFO("[CostTableManager] op filter done, survivors=%d preferred=%d negated=%d.", ct.count, preferred, negated);
+}
 
-    // Phase 2: priority — if any algo's opPriorityCheck returns true, keep only those.
-    // 被用户显式配置（HCCL_ALGO 覆盖）或 tuner 接管时跳过该软策略（读 costModel 字段）。
-    if (needSoftCheck && ct.count > 0) {
-        std::vector<int> priorityIndices;
+void CostTableManager::ApplyOpPriority(
+    CostTable& ct, const OpParam& opParam, const TopoInfoWithNetLayerDetails* topoInfo, std::vector<int>& hcclPrio)
+{
+    // opPriority 排他: keep 集 = (opPriority 命中 ∪ preferred) ∩ 非否定, 其余删除;
+    // preferred 的最终胜出在 Phase 3 层收敛, 否定一票否决(显式配置优先于软策略)
+    if (ct.count <= 0) {
+        return;
+    }
+    std::vector<int> priorityIndices;
+    for (int i = 0; i < ct.count; ++i) {
+        const AlgAttrs* attrs = AlgAttrsRegistry::Instance().Get(ct.costs[i].algName);
+        bool opPriorityMatched
+            = attrs != nullptr && attrs->op.opPriorityCheck && attrs->op.opPriorityCheck(opParam, topoInfo);
+        int prio = hcclPrio[static_cast<size_t>(i)];
+        if (prio >= 0 && (prio > 0 || opPriorityMatched)) {
+            priorityIndices.push_back(i);
+            HCCL_INFO(
+                "[CostTableManager] algName=%s kept: %s.", ct.costs[i].algName,
+                opPriorityMatched ? "opPriority" : "hcclAlgo preferred");
+        }
+    }
+    if (priorityIndices.empty() || static_cast<int>(priorityIndices.size()) == ct.count) {
+        return;
+    }
+    if (UNLIKELY(HcclCheckLogLevel(DLOG_INFO))) {
         for (int i = 0; i < ct.count; ++i) {
-            const AlgAttrs* attrs = AlgAttrsRegistry::Instance().Get(ct.costs[i].algName);
-            if (attrs != nullptr && attrs->op.opPriorityCheck && attrs->op.opPriorityCheck(opParam, topoInfo)) {
-                priorityIndices.push_back(i);
-                HCCL_INFO("[InitAndFilterByAttrs] algName=%s matched: opPriority.", ct.costs[i].algName);
+            bool isPriority = std::find(priorityIndices.begin(), priorityIndices.end(), i) != priorityIndices.end();
+            if (!isPriority) {
+                HCCL_INFO("[CostTableManager] algName=%s filtered: opPriority.", ct.costs[i].algName);
             }
-        }
-        if (!priorityIndices.empty() && static_cast<int>(priorityIndices.size()) < ct.count) {
-            if (UNLIKELY(HcclCheckLogLevel(DLOG_INFO))) {
-                for (int i = 0; i < ct.count; ++i) {
-                    bool isPriority
-                        = std::find(priorityIndices.begin(), priorityIndices.end(), i) != priorityIndices.end();
-                    if (!isPriority) {
-                        HCCL_INFO("[InitAndFilterByAttrs] algName=%s filtered: opPriority.", ct.costs[i].algName);
-                    }
-                }
-            }
-            AlgoCost* newCosts = new (std::nothrow) AlgoCost[ct.count]();
-            if (newCosts == nullptr) {
-                HCCL_ERROR("[InitAndFilterByAttrs] alloc newCosts for opPriority failed.");
-                DumpCostTable(ct);
-                return HcclResult::HCCL_SUCCESS;
-            }
-            for (size_t i = 0; i < priorityIndices.size(); ++i) {
-                newCosts[i] = ct.costs[priorityIndices[i]];
-            }
-            delete[] ct.costs;
-            ct.costs = newCosts;
-            ct.count = static_cast<int>(priorityIndices.size());
-            HCCL_INFO("[InitAndFilterByAttrs] opPriority applied, kept=%d.", ct.count);
         }
     }
+    CompactCostTable(ct, hcclPrio, priorityIndices);
+    HCCL_INFO("[CostTableManager] opPriority applied, kept=%d.", ct.count);
+}
 
-    DumpCostTable(ct);
-    return HcclResult::HCCL_SUCCESS;
+void CostTableManager::ConvergeHcclAlgoTier(CostTable& ct, std::vector<int>& hcclPrio)
+{
+    // HCCL_ALGO 优先级收敛(正向=1/否定=-1/未配置=0), 只提供优先级不强制过滤:
+    // 幸存者中仅保留最高优先级层(有正向指定则优先选, 否则有未配置算法时排除否定层);
+    // 幸存者全为否定层时放开回退, 避免 HCCL_ALGO 导致无算法可选
+    if (ct.count <= 0) {
+        return;
+    }
+    int maxPrio = *std::max_element(hcclPrio.begin(), hcclPrio.end());
+    if (maxPrio < 0) {
+        HCCL_WARNING("[CostTableManager] all survivors are hcclAlgo-negated, fallback to full candidates.");
+        return;
+    }
+    std::vector<int> keepIndices;
+    for (int i = 0; i < ct.count; ++i) {
+        if (hcclPrio[i] == maxPrio) {
+            keepIndices.push_back(i);
+        }
+    }
+    if (static_cast<int>(keepIndices.size()) == ct.count) {
+        return;
+    }
+    if (UNLIKELY(HcclCheckLogLevel(DLOG_INFO))) {
+        for (int i = 0; i < ct.count; ++i) {
+            if (hcclPrio[i] != maxPrio) {
+                HCCL_INFO(
+                    "[CostTableManager] algName=%s filtered: hcclAlgoPriority=%d < %d.",
+                    ct.costs[i].algName ? ct.costs[i].algName : "null", hcclPrio[i], maxPrio);
+            }
+        }
+    }
+    CompactCostTable(ct, hcclPrio, keepIndices);
+    HCCL_INFO("[CostTableManager] hcclAlgoPriority applied, kept=%d.", ct.count);
+}
+
+void CostTableManager::CompactCostTable(CostTable& ct, std::vector<int>& hcclPrio, const std::vector<int>& keepIndices)
+{
+    // 原地前移压缩(keepIndices 升序, writeIdx<=idx 恒成立), 免整表分配拷贝
+    int writeIdx = 0;
+    for (int idx : keepIndices) {
+        ct.costs[writeIdx] = ct.costs[idx];
+        hcclPrio[static_cast<size_t>(writeIdx)] = hcclPrio[static_cast<size_t>(idx)];
+        ++writeIdx;
+    }
+    ct.count = writeIdx;
+    hcclPrio.resize(static_cast<size_t>(writeIdx));
 }
 
 float CostTableManager::CalcAlgCost(
     const std::string& algName, u64 dataSize, const CostAlgoParams& algoParams, HcclCMDType opType,
-    const std::vector<AlgoType>& algoTypes, const AlgNetMeta& meta) const
+    const std::vector<AlgoType>& algoTypes, const AlgNetMeta& meta, OpExecuteConfig engine) const
 {
-    OpExecuteConfig engine = SelectorEngine::GetEngineByAlgName(algName);
-
     const CostModelParam* params = algoParams.param;
     std::vector<u32> groups = meta.groupSizes;
     if (groups.empty()) {
@@ -353,16 +433,6 @@ float CostTableManager::CalcAlgCost(
     return cost;
 }
 
-HcclResult CostTableManager::CostTableGen(
-    CostModel& cm, CostTable& ct, const TopoInfoWithNetLayerDetails* topoInfo, const OpParam& opParam)
-{
-    HCCL_INFO("[CostTableGen] generate cost table, algCount=%d.", cm.count);
-    HcclResult ret = InitAndFilterByAttrs(cm, ct, topoInfo, opParam);
-    if (ret != HcclResult::HCCL_SUCCESS) {
-        HCCL_ERROR("[CostTableGen] InitAndFilterByAttrs failed, ret=%d.", static_cast<int>(ret));
-    }
-    return ret;
-}
 // 对于{m,n}来说，小于m的数据量取利用率n
 const std::vector<UbUtilEntry> CostTableManager::closUbUtilTable_
     = {{0.125 * 1024 * 1024ULL, 0.10388f}, {0.25 * 1024 * 1024ULL, 0.10388f}, {0.5 * 1024 * 1024ULL, 0.10388f},

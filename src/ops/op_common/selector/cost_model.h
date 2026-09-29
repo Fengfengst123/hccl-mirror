@@ -46,8 +46,7 @@ HcclResult AddAlgToAllAlgos(
     HcclCMDType opType, const char* algName, const char* executorName, const char** templateName, int templateNum);
 
 // 检查算法是否匹配当前拓扑，返回 true=匹配，false=不匹配
-// needSoftPolicyCheck=false 时跳过 topoCustomCheck 软策略（用户显式配置 HCCL_ALGO 或 tuner 接管时，
-// 由 InitCostModel 盖章到 CostAlgoParams.needSoftPolicyCheck 后直接传入）
+// needSoftPolicyCheck=false 时跳过 topoCustomCheck 软策略（算法被 HCCL_ALGO 正向指定或 tuner 接管时）
 bool IsAlgoMatchTopo(
     const std::string& algName, const TopoInfoWithNetLayerDetails* topoInfo, bool needSoftPolicyCheck = true);
 
@@ -85,14 +84,14 @@ struct AlgNetMeta {
 
 typedef struct {
     const char* algName;
-    // 所有权：param 指向的内存由 costModel_ 持有（InitCostModel 深拷贝）。
+    // 所有权：param 指向的内存由 costModel_ 持有（FilterByTopoAndCalibrate 深拷贝）。
     // FreeCostModel 会逐个释放 param 指向的内存。
     const CostModelParam* param;
     int count;
-    // 该算法是否需要软策略检查（topoCustomCheck/opCustomCheck/priorityCheck 排他）。
-    // InitCostModel 一次性判定：用户显式配置（HCCL_ALGO 覆盖该 opType）或 tuner 插件加载时为 false，
-    // costtable 阶段直接读本字段，不再重复判定。
-    bool needSoftPolicyCheck = true;
+    // HCCL_ALGO 优先级: 1=正向指定(优先), -1=否定指定(排除), 0=未配置。
+    // 只提供优先级不强制过滤: costtable 过滤后在幸存者中按最高优先级层收敛, 全为否定层时放开回退;
+    // 正向指定(preferred)的算法跳过软策略 customCheck, 排他时不被删除
+    int hcclAlgoPriority = 0;
 } CostAlgoParams;
 
 typedef struct {
@@ -120,8 +119,14 @@ public:
     ~CostModelManager() = default;
     static CostModelManager* Global();
 
-    HcclResult
-    InitCostModel(HcclComm comm, TopoInfoWithNetLayerDetails* topoInfo, CostModel& costModel, const OpParam& param);
+    // ===== 通信域阶段选路管线(对应运行时 GenerateCostTable) =====
+    // 软策略让位: preferred(hcclAlgoPriority>0) 或 tuner 加载(HcclTunerIsLoaded 现查)时跳过 customCheck、排他豁免
+    // 生成 costModel: step1 分配填充 → step2 引擎过滤 → step3 HCCL_ALGO 打标 → step4 topo 过滤+标定 → step5
+    // topoPriority 排他 candidateEngines/candidatePrefixes: selector 引擎策略(回退序)给定的管线输入
+    static HcclResult GenerateCostModel(
+        HcclComm comm, CostModel& cm, const OpParam& param, TopoInfoWithNetLayerDetails* topoInfo,
+        const std::vector<OpExecuteConfig>& candidateEngines, const std::vector<std::string>& candidatePrefixes);
+
     static void FreeCostModel(CostModel& costModel);
     void InitBandwidth();
     void InitDpuSftCost();
@@ -154,6 +159,19 @@ public:
     static int CalcSyncTaskNum(u32 rankSize);
 
 private:
+    // step1: 分配并填充工作模型(条目 count=1, 与 allAlgos 对齐)
+    static HcclResult InitModel(CostModel& cm);
+    // step2: 引擎过滤(非候选引擎/无名/无 attrs 条目 count 置 0)
+    static void FilterByEngine(CostModel& cm, const std::vector<OpExecuteConfig>& candidateEngines);
+    // step3: HCCL_ALGO 打标(preferred=+1/否定=-1), 只打标不过滤
+    static HcclResult
+    ApplyHcclAlgoPriority(HcclComm comm, CostModel& cm, const std::vector<std::string>& candidatePrefixes);
+    // step4: topo 过滤 + cost 标定, 原地压缩(count 变为幸存条目数)
+    static HcclResult
+    FilterByTopoAndCalibrate(HcclComm comm, CostModel& cm, const OpParam& param, TopoInfoWithNetLayerDetails* topoInfo);
+    // step5: topoPriority 排他
+    static void ApplyTopoPriority(CostModel& cm, const TopoInfoWithNetLayerDetails* topoInfo);
+
     // 带宽的单位都是GB/s
     float localCopyBw_{};            // 本地拷贝带宽
     float localReduceBw_{};          // 本地reduce带宽

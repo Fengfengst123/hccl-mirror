@@ -9,6 +9,7 @@
  */
 
 #include <gtest/gtest.h>
+#include <climits>
 #include <string>
 #include <vector>
 #include "alg_parse.h"
@@ -55,6 +56,17 @@ static int GetAlgoCount(const CostModel& cm, const std::string& name)
     return -1; // 未找到
 }
 
+// 按算法名查找 hcclAlgoPriority（INT_MIN=不存在）
+static int GetAlgoPriority(const CostModel& cm, const std::string& name)
+{
+    for (int i = 0; i < cm.count; i++) {
+        if (cm.costAlgoParams[i].algName && name == cm.costAlgoParams[i].algName) {
+            return cm.costAlgoParams[i].hcclAlgoPriority;
+        }
+    }
+    return INT_MIN;
+}
+
 // 算法名列表（costModel 标准格式：ENGINE_TYPES.second + OP_TYPES.second + EXECUTOR_TYPES.second +
 // ALGO_TYPES.second...） 覆盖全部 ALGO_TYPES 值：Mesh, Mesh2Die, MeshOneShot, MeshTwoShot, MeshConcur,
 //   MeshMultiLink, MeshChunk, MeshChunkTwoShot, NHR, NHRMultiLink
@@ -92,7 +104,7 @@ protected:
 
 // ---------------------------------------------------------------------------
 // 测试 1：正向精确匹配——allReduce:sole{mesh2die}
-// 匹配 #0，排除同 OpType 下未匹配的 #1, #2
+// 匹配 #0 打优先级 1，同 OpType 其他算法不动（不强制过滤）
 // ---------------------------------------------------------------------------
 TEST_F(UpdateCostModelTest, PositiveExactMatch)
 {
@@ -101,19 +113,21 @@ TEST_F(UpdateCostModelTest, PositiveExactMatch)
 
     EXPECT_EQ(UpdateCostModelWithAlgo(parser, cm_, ENGINE_TYPES), HCCL_SUCCESS);
 
-    // 匹配的算法保持 count=1
+    // 匹配的算法打 hcclAlgoPriority=1，count 不变
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuAllReduceSoleMesh2Die"), 1);
     EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllReduceSoleMesh2Die"), 1);
-    // 同 OpType 下未匹配的算法被排除（count=0）
-    EXPECT_EQ(GetAlgoCount(cm_, "AivAllReduceParallelMeshMultiLinkNHR"), 0);
-    EXPECT_EQ(GetAlgoCount(cm_, "CcuMSAllReduceSequenceMeshOneShotNHR"), 0);
+    // 同 OpType 下未匹配的算法不受影响（优先级 0，count 保持 1）
+    EXPECT_EQ(GetAlgoPriority(cm_, "AivAllReduceParallelMeshMultiLinkNHR"), 0);
+    EXPECT_EQ(GetAlgoCount(cm_, "AivAllReduceParallelMeshMultiLinkNHR"), 1);
+    EXPECT_EQ(GetAlgoPriority(cm_, "CcuMSAllReduceSequenceMeshOneShotNHR"), 0);
     // 其他 OpType 的算法不受影响
-    EXPECT_EQ(GetAlgoCount(cm_, "AivAllGatherParallelMeshTwoShotMeshChunk"), 1);
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllToAllSoleMeshConcur"), 1);
+    EXPECT_EQ(GetAlgoPriority(cm_, "AivAllGatherParallelMeshTwoShotMeshChunk"), 0);
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuAllToAllSoleMeshConcur"), 0);
 }
 
 // ---------------------------------------------------------------------------
 // 测试 2：正向多 level 匹配——allReduce:parallel{meshmultilink,nhr}
-// 匹配 #1，排除同 OpType 下未匹配的 #0, #2
+// 匹配 #1 打优先级 1，其他算法不动
 // ---------------------------------------------------------------------------
 TEST_F(UpdateCostModelTest, PositiveMultiLevelMatch)
 {
@@ -122,14 +136,14 @@ TEST_F(UpdateCostModelTest, PositiveMultiLevelMatch)
 
     EXPECT_EQ(UpdateCostModelWithAlgo(parser, cm_, ENGINE_TYPES), HCCL_SUCCESS);
 
-    EXPECT_EQ(GetAlgoCount(cm_, "AivAllReduceParallelMeshMultiLinkNHR"), 1);
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllReduceSoleMesh2Die"), 0);
-    EXPECT_EQ(GetAlgoCount(cm_, "CcuMSAllReduceSequenceMeshOneShotNHR"), 0);
+    EXPECT_EQ(GetAlgoPriority(cm_, "AivAllReduceParallelMeshMultiLinkNHR"), 1);
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuAllReduceSoleMesh2Die"), 0);
+    EXPECT_EQ(GetAlgoPriority(cm_, "CcuMSAllReduceSequenceMeshOneShotNHR"), 0);
 }
 
 // ---------------------------------------------------------------------------
 // 测试 3：反向匹配——allReduce:not(sole{mesh2die})
-// #0 被排除（count=0），OpType 标记为已匹配，同 OpType 其他算法不受影响
+// #0 打优先级 -1（否定层），同 OpType 其他算法不动
 // ---------------------------------------------------------------------------
 TEST_F(UpdateCostModelTest, NegativeExecutorMatch)
 {
@@ -138,16 +152,17 @@ TEST_F(UpdateCostModelTest, NegativeExecutorMatch)
 
     EXPECT_EQ(UpdateCostModelWithAlgo(parser, cm_, ENGINE_TYPES), HCCL_SUCCESS);
 
-    // #0 被排除
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllReduceSoleMesh2Die"), 0);
-    // isExecNegated 标记 OpType 为已匹配，不排除其他算法
-    EXPECT_EQ(GetAlgoCount(cm_, "AivAllReduceParallelMeshMultiLinkNHR"), 1);
-    EXPECT_EQ(GetAlgoCount(cm_, "CcuMSAllReduceSequenceMeshOneShotNHR"), 1);
+    // #0 打 hcclAlgoPriority=-1，count 不变
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuAllReduceSoleMesh2Die"), -1);
+    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllReduceSoleMesh2Die"), 1);
+    // isExecNegated 标记 OpType 已匹配，其他算法不受影响
+    EXPECT_EQ(GetAlgoPriority(cm_, "AivAllReduceParallelMeshMultiLinkNHR"), 0);
+    EXPECT_EQ(GetAlgoPriority(cm_, "CcuMSAllReduceSequenceMeshOneShotNHR"), 0);
 }
 
 // ---------------------------------------------------------------------------
 // 测试 4：全局配置（opType 为空）——sole{meshconcur}
-// 遍历所有 OpType，匹配到的 OpType 排除未匹配算法
+// 遍历所有 OpType，命中的打优先级 1，其余不动
 // ---------------------------------------------------------------------------
 TEST_F(UpdateCostModelTest, GlobalConfig)
 {
@@ -156,18 +171,19 @@ TEST_F(UpdateCostModelTest, GlobalConfig)
 
     EXPECT_EQ(UpdateCostModelWithAlgo(parser, cm_, ENGINE_TYPES), HCCL_SUCCESS);
 
-    // allToAll 匹配 #5 → 排除同 OpType 下其他算法
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllToAllSoleMeshConcur"), 1);
-    EXPECT_EQ(GetAlgoCount(cm_, "DpuAllToAllSequenceMeshMeshNHR"), 0);
+    // allToAll 命中 #5 → 优先级 1
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuAllToAllSoleMeshConcur"), 1);
+    EXPECT_EQ(GetAlgoPriority(cm_, "DpuAllToAllSequenceMeshMeshNHR"), 0);
 
-    // 未匹配的 OpType 算法不受影响
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllReduceSoleMesh2Die"), 1);
-    EXPECT_EQ(GetAlgoCount(cm_, "CcuMSBroadcastConcurMeshChunkNHRMultiLink"), 1);
+    // 未命中的 OpType 算法不受影响
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuAllReduceSoleMesh2Die"), 0);
+    EXPECT_EQ(GetAlgoPriority(cm_, "CcuMSBroadcastConcurMeshChunkNHRMultiLink"), 0);
 }
 
 // ---------------------------------------------------------------------------
 // 测试 5：优先级——后面的规则优先级高
-// allReduce:sole{mesh2die} 先匹配 #0，但 allReduce:parallel{meshmultilink,nhr} 优先级更高匹配 #1
+// allReduce:sole{mesh2die} 先匹配 #0，但 allReduce:parallel{meshmultilink,nhr} 优先级高匹配 #1
+// 同 OpType 只有最后一条生效
 // ---------------------------------------------------------------------------
 TEST_F(UpdateCostModelTest, PriorityOrder)
 {
@@ -176,16 +192,16 @@ TEST_F(UpdateCostModelTest, PriorityOrder)
 
     EXPECT_EQ(UpdateCostModelWithAlgo(parser, cm_, ENGINE_TYPES), HCCL_SUCCESS);
 
-    // 优先级高的 parallel{meshmultilink,nhr} 匹配 #1
-    EXPECT_EQ(GetAlgoCount(cm_, "AivAllReduceParallelMeshMultiLinkNHR"), 1);
-    // 同 OpType 未匹配的算法被排除
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllReduceSoleMesh2Die"), 0);
-    EXPECT_EQ(GetAlgoCount(cm_, "CcuMSAllReduceSequenceMeshOneShotNHR"), 0);
+    // 优先级高的 parallel{meshmultilink,nhr} 命中 #1
+    EXPECT_EQ(GetAlgoPriority(cm_, "AivAllReduceParallelMeshMultiLinkNHR"), 1);
+    // 同 OpType 更早的 sole{mesh2die} 不再生效
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuAllReduceSoleMesh2Die"), 0);
+    EXPECT_EQ(GetAlgoPriority(cm_, "CcuMSAllReduceSequenceMeshOneShotNHR"), 0);
 }
 
 // ---------------------------------------------------------------------------
-// 测试 6：全局排除 + 指定 OpType 启用
-// not(nhrmultilink) 全局排除，allReduce:sole{mesh2die} 优先级高
+// 测试 6：全局否定 + 指定 OpType 启用
+// not(nhrmultilink) 全局否定，allReduce:sole{mesh2die} 优先级高
 // ---------------------------------------------------------------------------
 TEST_F(UpdateCostModelTest, GlobalExcludeThenOpTypeEnable)
 {
@@ -194,15 +210,16 @@ TEST_F(UpdateCostModelTest, GlobalExcludeThenOpTypeEnable)
 
     EXPECT_EQ(UpdateCostModelWithAlgo(parser, cm_, ENGINE_TYPES), HCCL_SUCCESS);
 
-    // allReduce 被 sole{mesh2die} 匹配（优先级高）
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllReduceSoleMesh2Die"), 1);
-    // 同 OpType 下其他算法被排除
-    EXPECT_EQ(GetAlgoCount(cm_, "AivAllReduceParallelMeshMultiLinkNHR"), 0);
-    EXPECT_EQ(GetAlgoCount(cm_, "CcuMSAllReduceSequenceMeshOneShotNHR"), 0);
-    EXPECT_EQ(GetAlgoCount(cm_, "CcuMSAllReduceSoleNHRMultiLink"), 0);
+    // allReduce 被 sole{mesh2die} 优先命中
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuAllReduceSoleMesh2Die"), 1);
+    // 同 OpType 下其他算法不动
+    EXPECT_EQ(GetAlgoPriority(cm_, "AivAllReduceParallelMeshMultiLinkNHR"), 0);
+    EXPECT_EQ(GetAlgoPriority(cm_, "CcuMSAllReduceSequenceMeshOneShotNHR"), 0);
+    EXPECT_EQ(GetAlgoPriority(cm_, "CcuMSAllReduceSoleNHRMultiLink"), 0);
 
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllToAllSoleMeshConcur"), 1);
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllToAllSoleNHRMultiLink"), 0);
+    // 全局 not(nhrmultilink) 对未认领的 OpType 生效 → allToAll 的 Sole+NHRMultiLink 打 -1
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuAllToAllSoleMeshConcur"), 0);
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuAllToAllSoleNHRMultiLink"), -1);
 }
 
 // ---------------------------------------------------------------------------
@@ -219,12 +236,12 @@ TEST_F(UpdateCostModelTest, PrefixMatch)
 
     EXPECT_EQ(UpdateCostModelWithAlgo(parser, cm, ENGINE_TYPES), HCCL_SUCCESS);
 
-    // allReduce + sole 前缀的算法都匹配
-    EXPECT_EQ(GetAlgoCount(cm, "AicpuAllReduceSoleMesh2Die"), 1);
-    EXPECT_EQ(GetAlgoCount(cm, "AivAllReduceSoleMeshConcur"), 1);
-    // 非 sole 的 allReduce 算法被排除
-    EXPECT_EQ(GetAlgoCount(cm, "AivAllReduceParallelMeshMultiLinkNHR"), 0);
-    EXPECT_EQ(GetAlgoCount(cm, "CcuMSAllReduceSequenceMeshOneShotNHR"), 0);
+    // allReduce + sole 前缀的算法都命中
+    EXPECT_EQ(GetAlgoPriority(cm, "AicpuAllReduceSoleMesh2Die"), 1);
+    EXPECT_EQ(GetAlgoPriority(cm, "AivAllReduceSoleMeshConcur"), 1);
+    // 非 sole 的 allReduce 算法不动
+    EXPECT_EQ(GetAlgoPriority(cm, "AivAllReduceParallelMeshMultiLinkNHR"), 0);
+    EXPECT_EQ(GetAlgoPriority(cm, "CcuMSAllReduceSequenceMeshOneShotNHR"), 0);
 
     FreeCostModel(cm);
 }
@@ -247,19 +264,19 @@ TEST_F(UpdateCostModelTest, MultipleOpTypesMatched)
 
     EXPECT_EQ(UpdateCostModelWithAlgo(parser, cm_, ENGINE_TYPES), HCCL_SUCCESS);
 
-    // 每个 OpType 都有匹配的算法
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllReduceSoleMesh2Die"), 1);
-    EXPECT_EQ(GetAlgoCount(cm_, "AivAllGatherParallelMeshTwoShotMeshChunk"), 1);
-    EXPECT_EQ(GetAlgoCount(cm_, "AivReduceScatterSequenceNHRMultiLinkMeshOneShot"), 1);
-    EXPECT_EQ(GetAlgoCount(cm_, "CcuMSBroadcastConcurMeshChunkNHRMultiLink"), 1);
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllToAllSoleMeshConcur"), 1);
-    EXPECT_EQ(GetAlgoCount(cm_, "AivAllToAllVSequenceMeshChunkTwoShotNHRMesh"), 1);
-    EXPECT_EQ(GetAlgoCount(cm_, "CcuMSScatterConcurMeshOneShotMesh"), 1);
-    EXPECT_EQ(GetAlgoCount(cm_, "CcuMSReduceSequenceNHRMeshTwoShot"), 1);
+    // 每个 OpType 都有命中的算法打 1
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuAllReduceSoleMesh2Die"), 1);
+    EXPECT_EQ(GetAlgoPriority(cm_, "AivAllGatherParallelMeshTwoShotMeshChunk"), 1);
+    EXPECT_EQ(GetAlgoPriority(cm_, "AivReduceScatterSequenceNHRMultiLinkMeshOneShot"), 1);
+    EXPECT_EQ(GetAlgoPriority(cm_, "CcuMSBroadcastConcurMeshChunkNHRMultiLink"), 1);
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuAllToAllSoleMeshConcur"), 1);
+    EXPECT_EQ(GetAlgoPriority(cm_, "AivAllToAllVSequenceMeshChunkTwoShotNHRMesh"), 1);
+    EXPECT_EQ(GetAlgoPriority(cm_, "CcuMSScatterConcurMeshOneShotMesh"), 1);
+    EXPECT_EQ(GetAlgoPriority(cm_, "CcuMSReduceSequenceNHRMeshTwoShot"), 1);
 
-    // 同 OpType 下未匹配的算法被排除
-    EXPECT_EQ(GetAlgoCount(cm_, "AivAllReduceParallelMeshMultiLinkNHR"), 0);
-    EXPECT_EQ(GetAlgoCount(cm_, "CcuMSAllReduceSequenceMeshOneShotNHR"), 0);
+    // 同 OpType 下未命中的算法不动
+    EXPECT_EQ(GetAlgoPriority(cm_, "AivAllReduceParallelMeshMultiLinkNHR"), 0);
+    EXPECT_EQ(GetAlgoPriority(cm_, "CcuMSAllReduceSequenceMeshOneShotNHR"), 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -271,6 +288,7 @@ TEST_F(UpdateCostModelTest, EmptyParser)
     ASSERT_EQ(parser.Parser(""), HCCL_SUCCESS);
 
     EXPECT_EQ(UpdateCostModelWithAlgo(parser, cm_, ENGINE_TYPES), HCCL_SUCCESS);
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuAllReduceSoleMesh2Die"), 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -283,12 +301,12 @@ TEST_F(UpdateCostModelTest, NoMatchExecutorType)
     ASSERT_EQ(parser.Parser("allReduce:pipeline{mesh2die}"), HCCL_SUCCESS);
 
     EXPECT_EQ(UpdateCostModelWithAlgo(parser, cm_, ENGINE_TYPES), HCCL_SUCCESS);
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuAllReduceSoleMesh2Die"), 0);
 }
 
 // ---------------------------------------------------------------------------
 // 测试 11：hasNegatedAlgo 模糊匹配——sequence{mesh,not(nhr),nhr}
-// #10 匹配（level1=Mesh≠NHR），#11 不匹配（level1=NHR=被not）
-// #3 也属于 allGather 但不在 matchedNames 中，被排除
+// #10 命中（level1=Mesh≠NHR）打 1，#11 不命中，#3 同 OpType 未命中不动
 // ---------------------------------------------------------------------------
 TEST_F(UpdateCostModelTest, NegatedAlgoFuzzyMatch)
 {
@@ -297,16 +315,16 @@ TEST_F(UpdateCostModelTest, NegatedAlgoFuzzyMatch)
 
     EXPECT_EQ(UpdateCostModelWithAlgo(parser, cm_, ENGINE_TYPES), HCCL_SUCCESS);
 
-    // #10 匹配（level1=Mesh，不是 NHR）→ count=1
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllGatherSequenceMeshMeshNHR"), 1);
-    // #11 不匹配（level1=NHR，被 not 排除）→ count=0
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllGatherSequenceMeshNHRNHR"), 0);
-    // #3 也属于 allGather 但不在 matchedNames 中 → count=0
-    EXPECT_EQ(GetAlgoCount(cm_, "AivAllGatherParallelMeshTwoShotMeshChunk"), 0);
+    // #10 命中（level1=Mesh，不是 NHR）→ 优先级 1
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuAllGatherSequenceMeshMeshNHR"), 1);
+    // #11 不命中（level1=NHR，被 not 排除）
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuAllGatherSequenceMeshNHRNHR"), 0);
+    // #3 也属于 allGather 但未命中 → 不动
+    EXPECT_EQ(GetAlgoPriority(cm_, "AivAllGatherParallelMeshTwoShotMeshChunk"), 0);
 }
 
 // ---------------------------------------------------------------------------
-// 测试 12：hasNegatedAlgo 匹配成功后排除同 OpType 其他算法
+// 测试 12：hasNegatedAlgo 命中后同 OpType 其他算法不动
 // 使用 Mesh2Die 作为 level1 多样化取非匹配
 // ---------------------------------------------------------------------------
 TEST_F(UpdateCostModelTest, NegatedAlgoExcludeOthers)
@@ -322,19 +340,19 @@ TEST_F(UpdateCostModelTest, NegatedAlgoExcludeOthers)
 
     EXPECT_EQ(UpdateCostModelWithAlgo(parser, cm, ENGINE_TYPES), HCCL_SUCCESS);
 
-    // 匹配 Mesh+Mesh2Die（level1=Mesh2Die，不是 NHR）
-    EXPECT_EQ(GetAlgoCount(cm, "AicpuAllReduceSequenceMeshMesh2Die"), 1);
-    // 不匹配 Mesh+NHR（level1=NHR，被 not 排除）
-    EXPECT_EQ(GetAlgoCount(cm, "AivAllReduceSequenceMeshNHR"), 0);
-    // 同 OpType 其他算法被排除
-    EXPECT_EQ(GetAlgoCount(cm, "AicpuAllReduceSoleMesh2Die"), 0);
+    // 命中 Mesh+Mesh2Die（level1=Mesh2Die，不是 NHR）
+    EXPECT_EQ(GetAlgoPriority(cm, "AicpuAllReduceSequenceMeshMesh2Die"), 1);
+    // 不命中 Mesh+NHR（level1=NHR，被 not 排除）
+    EXPECT_EQ(GetAlgoPriority(cm, "AivAllReduceSequenceMeshNHR"), 0);
+    // 同 OpType 其他算法不动
+    EXPECT_EQ(GetAlgoPriority(cm, "AicpuAllReduceSoleMesh2Die"), 0);
 
     FreeCostModel(cm);
 }
 
 // ---------------------------------------------------------------------------
 // Send/Recv 专用 fixture
-// 规则 4.6：send/recv 算法名不参与 count=0 的排除逻辑
+// 规则 4.6：send/recv 算法不参与 executor 否定排除（不打 -1，保持未配置）
 // ---------------------------------------------------------------------------
 class UpdateCostModelSendRecvTest : public testing::Test {
 protected:
@@ -356,7 +374,7 @@ protected:
 };
 
 // ---------------------------------------------------------------------------
-// 测试 1：全局 not(sole{}) 前缀匹配——Send/Recv 候选不被置零
+// 测试 1：全局 not(sole{}) 前缀匹配——Send/Recv 不打否定标记
 // ---------------------------------------------------------------------------
 TEST_F(UpdateCostModelSendRecvTest, NegatedExecutorPrefixPreservesSendRecv)
 {
@@ -365,18 +383,20 @@ TEST_F(UpdateCostModelSendRecvTest, NegatedExecutorPrefixPreservesSendRecv)
 
     EXPECT_EQ(UpdateCostModelWithAlgo(parser, cm_, ENGINE_TYPES), HCCL_SUCCESS);
 
-    // Send/Recv 候选保留 count=1
+    // Send/Recv 不参与 executor 否定: 保持未配置(0)且存活
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuSendSoleMesh"), 0);
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuRecvSoleMesh"), 0);
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuBatchSendRecvSoleMesh"), 0);
     EXPECT_EQ(GetAlgoCount(cm_, "AicpuSendSoleMesh"), 1);
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuRecvSoleMesh"), 1);
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuBatchSendRecvSoleMesh"), 1);
-    // 非 Send/Recv 的 sole 算法被排除
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllReduceSoleMesh"), 0);
+    // 非 Send/Recv 的 sole 算法打否定标记(-1), 新语义不杀 count
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuAllReduceSoleMesh"), -1);
+    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllReduceSoleMesh"), 1);
     // 非 sole 算法不受影响
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllReduceSequenceMeshNHR"), 1);
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuAllReduceSequenceMeshNHR"), 0);
 }
 
 // ---------------------------------------------------------------------------
-// 测试 2：全局 not(sole{mesh}) 精确匹配——Send/Recv 候选不被置零
+// 测试 2：全局 not(sole{mesh}) 精确匹配——Send/Recv 不打否定标记
 // ---------------------------------------------------------------------------
 TEST_F(UpdateCostModelSendRecvTest, NegatedExecutorExactMatchPreservesSendRecv)
 {
@@ -385,14 +405,16 @@ TEST_F(UpdateCostModelSendRecvTest, NegatedExecutorExactMatchPreservesSendRecv)
 
     EXPECT_EQ(UpdateCostModelWithAlgo(parser, cm_, ENGINE_TYPES), HCCL_SUCCESS);
 
-    // Send/Recv 候选保留 count=1
+    // Send/Recv 不参与 executor 否定: 保持未配置(0)且存活
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuSendSoleMesh"), 0);
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuRecvSoleMesh"), 0);
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuBatchSendRecvSoleMesh"), 0);
     EXPECT_EQ(GetAlgoCount(cm_, "AicpuSendSoleMesh"), 1);
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuRecvSoleMesh"), 1);
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuBatchSendRecvSoleMesh"), 1);
-    // 非 Send/Recv 的 sole{mesh} 算法被排除
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllReduceSoleMesh"), 0);
+    // 非 Send/Recv 的 sole{mesh} 算法打否定标记(-1), 新语义不杀 count
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuAllReduceSoleMesh"), -1);
+    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllReduceSoleMesh"), 1);
     // 非 sole{mesh} 算法不受影响
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllReduceSequenceMeshNHR"), 1);
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuAllReduceSequenceMeshNHR"), 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -405,14 +427,14 @@ TEST_F(UpdateCostModelSendRecvTest, ScopedNegationPreservesSendRecv)
 
     EXPECT_EQ(UpdateCostModelWithAlgo(parser, cm_, ENGINE_TYPES), HCCL_SUCCESS);
 
-    // Send/Recv 不受 allReduce 取反影响，保留 count=1
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuSendSoleMesh"), 1);
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuRecvSoleMesh"), 1);
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuBatchSendRecvSoleMesh"), 1);
-    // allReduce 的 sole{mesh} 被排除
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllReduceSoleMesh"), 0);
+    // Send/Recv 不受 allReduce 取反影响, 保持未配置(0)
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuSendSoleMesh"), 0);
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuRecvSoleMesh"), 0);
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuBatchSendRecvSoleMesh"), 0);
+    // allReduce 的 sole{mesh} 打否定标记(-1)
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuAllReduceSoleMesh"), -1);
     // allReduce 的非 sole{mesh} 不受影响
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllReduceSequenceMeshNHR"), 1);
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuAllReduceSequenceMeshNHR"), 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -425,11 +447,11 @@ TEST_F(UpdateCostModelTest, NegatedExecutorMarksOpType)
 
     EXPECT_EQ(UpdateCostModelWithAlgo(parser, cm_, ENGINE_TYPES), HCCL_SUCCESS);
 
-    // #1 被排除
-    EXPECT_EQ(GetAlgoCount(cm_, "AivAllReduceParallelMeshMultiLinkNHR"), 0);
-    // isExecNegated 标记 OpType，不排除其他算法
-    EXPECT_EQ(GetAlgoCount(cm_, "AicpuAllReduceSoleMesh2Die"), 1);
-    EXPECT_EQ(GetAlgoCount(cm_, "CcuMSAllReduceSequenceMeshOneShotNHR"), 1);
+    // #1 打 -1
+    EXPECT_EQ(GetAlgoPriority(cm_, "AivAllReduceParallelMeshMultiLinkNHR"), -1);
+    // isExecNegated 标记 OpType，其他算法不受影响
+    EXPECT_EQ(GetAlgoPriority(cm_, "AicpuAllReduceSoleMesh2Die"), 0);
+    EXPECT_EQ(GetAlgoPriority(cm_, "CcuMSAllReduceSequenceMeshOneShotNHR"), 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -446,11 +468,11 @@ TEST_F(UpdateCostModelTest, PipelineMatch)
 
     EXPECT_EQ(UpdateCostModelWithAlgo(parser, cm, ENGINE_TYPES), HCCL_SUCCESS);
 
-    // pipeline + mesh2die 匹配
-    EXPECT_EQ(GetAlgoCount(cm, "AicpuAllReducePipeLineMesh2Die"), 1);
-    // 同 OpType 其他算法被排除
-    EXPECT_EQ(GetAlgoCount(cm, "AicpuAllReduceSoleMesh2Die"), 0);
-    EXPECT_EQ(GetAlgoCount(cm, "AivAllReduceParallelMeshMultiLinkNHR"), 0);
+    // pipeline + mesh2die 命中
+    EXPECT_EQ(GetAlgoPriority(cm, "AicpuAllReducePipeLineMesh2Die"), 1);
+    // 同 OpType 其他算法不动
+    EXPECT_EQ(GetAlgoPriority(cm, "AicpuAllReduceSoleMesh2Die"), 0);
+    EXPECT_EQ(GetAlgoPriority(cm, "AivAllReduceParallelMeshMultiLinkNHR"), 0);
 
     FreeCostModel(cm);
 }
@@ -463,10 +485,10 @@ TEST_F(UpdateCostModelTest, MultipleNegatedAlgoLevels)
 {
     std::vector<std::string> names = ALGO_NAMES;
     names.push_back(
-        "AicpuAllReduceSequenceMesh2DieMeshMesh2Die"); // 12: 匹配（level1=Mesh≠NHR, level2=Mesh2Die≠MeshOneShot）
-    names.push_back("AicpuAllReduceSequenceMesh2DieNHRMesh"); // 13: 不匹配（level1=NHR，被 not(nhr) 排除）
+        "AicpuAllReduceSequenceMesh2DieMeshMesh2Die"); // 12: 命中（level1=Mesh≠NHR, level2=Mesh2Die≠MeshOneShot）
+    names.push_back("AicpuAllReduceSequenceMesh2DieNHRMesh"); // 13: 不命中（level1=NHR，被 not(nhr) 排除）
     names.push_back(
-        "AicpuAllReduceSequenceMesh2DieMeshMeshOneShot"); // 14: 不匹配（level2=MeshOneShot，被 not(meshoneshot) 排除）
+        "AicpuAllReduceSequenceMesh2DieMeshMeshOneShot"); // 14: 不命中（level2=MeshOneShot，被 not(meshoneshot) 排除）
     CostModel cm = BuildCostModel(names);
 
     HcclAlgoParser parser;
@@ -474,14 +496,14 @@ TEST_F(UpdateCostModelTest, MultipleNegatedAlgoLevels)
 
     EXPECT_EQ(UpdateCostModelWithAlgo(parser, cm, ENGINE_TYPES), HCCL_SUCCESS);
 
-    // level1=Mesh(≠NHR), level2=Mesh2Die(≠MeshOneShot) → 匹配
-    EXPECT_EQ(GetAlgoCount(cm, "AicpuAllReduceSequenceMesh2DieMeshMesh2Die"), 1);
+    // level1=Mesh(≠NHR), level2=Mesh2Die(≠MeshOneShot) → 命中
+    EXPECT_EQ(GetAlgoPriority(cm, "AicpuAllReduceSequenceMesh2DieMeshMesh2Die"), 1);
     // level1=NHR → 被 not(nhr) 排除
-    EXPECT_EQ(GetAlgoCount(cm, "AicpuAllReduceSequenceMesh2DieNHRMesh"), 0);
+    EXPECT_EQ(GetAlgoPriority(cm, "AicpuAllReduceSequenceMesh2DieNHRMesh"), 0);
     // level2=MeshOneShot → 被 not(meshoneshot) 排除
-    EXPECT_EQ(GetAlgoCount(cm, "AicpuAllReduceSequenceMesh2DieMeshMeshOneShot"), 0);
-    // 同 OpType 其他算法被排除
-    EXPECT_EQ(GetAlgoCount(cm, "AicpuAllReduceSoleMesh2Die"), 0);
+    EXPECT_EQ(GetAlgoPriority(cm, "AicpuAllReduceSequenceMesh2DieMeshMeshOneShot"), 0);
+    // 同 OpType 其他算法不动
+    EXPECT_EQ(GetAlgoPriority(cm, "AicpuAllReduceSoleMesh2Die"), 0);
 
     FreeCostModel(cm);
 }

@@ -105,15 +105,13 @@ struct HcclAlgoParser {
 
 // 带 candidateEngineNames 重载: selector 传入候选引擎前缀(如 {"CcuMS","CcuSched","Aiv","Aicpu"})
 // algo 模块据此过滤掉不在候选引擎中的算法
-HcclResult FilterCmByHcclAlgo(HcclComm comm, CostModel& cm, const std::vector<std::string>& candidateEngineNames);
-
-// 解析 comm 属性/env 的 HCCL_ALGO 配置（解析失败视为未配置），返回被配置覆盖的 opType 集合。
-// allCovered=true 表示存在全局条目（opType 为空），对所有算子生效。
-// 用途：被覆盖算子的软策略检查（topoCustomCheck/opCustomCheck/topoPriorityCheck）让位于用户显式配置。
-HcclResult GetConfiguredOpTypes(HcclComm comm, std::set<HcclCMDType>& coveredOps, bool& allCovered);
+// 按 HCCL_ALGO 配置给 costModel 中算法打优先级(正向=1/否定=-1), 只提供优先级不强制过滤:
+// costtable 过滤后在幸存者中按最高非空优先级层收敛, 全为否定层时放开回退自动选路。
+// candidateEngineNames 为 selector 候选引擎前缀, 仅用于算法名按引擎展开
+HcclResult MarkHcclAlgoPriority(HcclComm comm, CostModel& cm, const std::vector<std::string>& candidateEngineNames);
 
 // ---------------------------------------------------------------------------
-// 根据 HcclAlgoParser 解析结果刷新 CostModel
+// 根据 HcclAlgoParser 解析结果给 CostModel 中算法打 HCCL_ALGO 优先级
 // 参数：
 //   algoParser - 解析后的算法配置
 //   model      - CostModel 结构体（输入输出）
@@ -122,7 +120,7 @@ HcclResult GetConfiguredOpTypes(HcclComm comm, std::set<HcclCMDType>& coveredOps
 //   1. 反向遍历 executorList（后面的优先级高）
 //   2. 按 OpType 维度匹配，已匹配的 OpType 不再参与后续匹配
 //   3. 所有 OpType 都匹配成功后提前退出
-//   4. enable=false 为排除算法，设置 count=0
+//   4. 正向命中打 hcclAlgoPriority=1，enable=false 命中打 -1，不强制过滤
 // ---------------------------------------------------------------------------
 HcclResult UpdateCostModelWithAlgo(
     const HcclAlgoParser& algoParser, CostModel& model, const std::vector<std::string>& engineTypes);

@@ -60,6 +60,8 @@ typedef struct {
     const char* algName;         //
     const CostModelParam* param; //
     int count;                   //
+    // HCCL_ALGO 优先级: 1=正向指定(优先), -1=否定指定(排除), 0=未配置
+    int hcclAlgoPriority = 0;
 } CostAlgoParams;
 
 typedef struct {
@@ -67,9 +69,8 @@ typedef struct {
     int count;
 } CostModel;
 
-HcclResult FilterCmByHcclAlgo(HcclComm comm, CostModel& cm);
-
-HcclResult FilterCmByHcclAlgo(HcclComm comm, CostModel& cm, const std::vector<std::string>& candidateEngineNames);
+// 按 HCCL_ALGO 配置打优先级(正向=1/否定=-1), 只提供优先级不强制过滤
+HcclResult MarkHcclAlgoPriority(HcclComm comm, CostModel& cm, const std::vector<std::string>& candidateEngineNames);
 
 HcclResult UpdateCostModelWithAlgo(
     const HcclAlgoParser& algoParser, CostModel& model, const std::vector<std::string>& engineTypes);

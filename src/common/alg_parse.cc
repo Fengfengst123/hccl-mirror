@@ -487,6 +487,13 @@ static bool StartsWith(const std::string& str, const std::string& prefix)
     return str.size() >= prefix.size() && str.compare(0, prefix.size(), prefix) == 0;
 }
 
+// 规则 4.6: send/recv 算法不参与 executor 否定排除(issue #742), 仅按算法名识别
+static bool ContainsSendRecv(const std::string& algoKey)
+{
+    std::string lower = ToLowerStr(algoKey);
+    return lower.find("send") != std::string::npos || lower.find("recv") != std::string::npos;
+}
+
 // algoType 驼峰名列表（按长度降序，避免 "Mesh" 误匹配 "Mesh2Die"）
 static const std::vector<std::string> SORTED_ALGO_NAMES = []() {
     std::vector<std::string> names;
@@ -535,34 +542,6 @@ static bool MatchesAlgoPattern(
     return pos == remaining.size();
 }
 
-// 判断算法名是否属于指定 OpType
-// costModel 算法名使用 ENGINE_TYPES.second（驼峰）+ OP_TYPES.second + EXECUTOR_TYPES.second 格式
-static bool IsAlgoOfOpType(const std::string& algoKey, const std::string& opType)
-{
-    std::string camelOpType = OP_TYPES.at(opType);
-    for (const auto& enginePair : ENGINE_TYPES) {
-        std::string prefix = enginePair.second + camelOpType;
-        if (!StartsWith(algoKey, prefix) || algoKey.size() == prefix.size()) {
-            continue;
-        }
-        std::string rest = algoKey.substr(prefix.size());
-        for (const auto& execPair : EXECUTOR_TYPES) {
-            if (StartsWith(rest, execPair.second)) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-// 判断算法名是否包含 send 或 recv（大小写不敏感）
-// 规则 4.6：send/recv 算法名不参与 count=0 的排除逻辑
-static bool ContainsSendRecv(const std::string& algoKey)
-{
-    std::string lower = ToLowerStr(algoKey);
-    return lower.find("send") != std::string::npos || lower.find("recv") != std::string::npos;
-}
-
 // 匹配过程共享上下文，用于减少函数参数个数
 struct AlgoMatchCtx {
     CostModel& model;
@@ -574,8 +553,8 @@ struct AlgoMatchCtx {
 
 // 单次 opType 匹配的结果
 struct MatchResult {
-    std::vector<std::string> matchedNames;
-    bool negatedFound = false;
+    std::vector<std::string> matchedNames; // 正向指定命中
+    std::vector<std::string> negatedNames; // 否定指定(!executor)命中
 };
 
 // 对单个 opType 遍历所有 engine 收集匹配结果（三种匹配模式）
@@ -599,9 +578,9 @@ static void CollectMatchedNamesForOpType(
                 if (!StartsWith(key, prefix))
                     continue;
                 if (isExecNegated) {
-                    result.negatedFound = true;
+                    // 规则 4.6: send/recv 算法不参与 executor 否定, 不打否定标记
                     if (!ContainsSendRecv(key)) {
-                        ctx.model.costAlgoParams[i].count = 0;
+                        result.negatedNames.push_back(key);
                     }
                 } else if (ctx.model.costAlgoParams[i].count != 0) {
                     result.matchedNames.push_back(key);
@@ -612,47 +591,53 @@ static void CollectMatchedNamesForOpType(
             auto it = ctx.keyToIdx.find(fullName);
             if (it == ctx.keyToIdx.end())
                 continue;
-            int algoIdx = it->second;
             if (isExecNegated) {
-                result.negatedFound = true;
+                // 规则 4.6: send/recv 算法不参与 executor 否定, 不打否定标记
                 if (!ContainsSendRecv(fullName)) {
-                    ctx.model.costAlgoParams[algoIdx].count = 0;
+                    result.negatedNames.push_back(fullName);
                 }
-            } else if (ctx.model.costAlgoParams[algoIdx].count != 0) {
+            } else if (ctx.model.costAlgoParams[it->second].count != 0) {
                 result.matchedNames.push_back(fullName);
             }
         }
     }
 }
 
-// 匹配后处理：标记 OpType 并排除未匹配算法
-static void
-ProcessMatchedResults(AlgoMatchCtx& ctx, const std::string& opType, bool isExecNegated, const MatchResult& result)
+// 给命中算法打 HCCL_ALGO 优先级（不改动 count，liveness 由过滤链路决定）
+static void MarkPriority(AlgoMatchCtx& ctx, const std::vector<std::string>& names, int priority)
 {
-    if (!isExecNegated && !result.matchedNames.empty()) {
-        ctx.matchedOpTypes.insert(opType);
-        for (int i = 0; i < ctx.model.count; i++) {
-            std::string key(ctx.model.costAlgoParams[i].algName ? ctx.model.costAlgoParams[i].algName : "");
-            if (!IsAlgoOfOpType(key, opType))
-                continue;
-            bool isMatched = false;
-            for (const auto& name : result.matchedNames) {
-                if (key == name) {
-                    isMatched = true;
-                    break;
-                }
-            }
-            if (!isMatched && !ContainsSendRecv(key)) {
-                ctx.model.costAlgoParams[i].count = 0;
-            }
+    for (const auto& name : names) {
+        auto it = ctx.keyToIdx.find(name);
+        if (it == ctx.keyToIdx.end()) {
+            continue;
         }
-    } else if (isExecNegated && result.negatedFound) {
-        ctx.matchedOpTypes.insert(opType);
+        ctx.model.costAlgoParams[it->second].hcclAlgoPriority = priority;
+        HCCL_INFO("[UpdateCostModelWithAlgo] algName=%s hcclAlgoPriority=%d.", name.c_str(), priority);
     }
 }
 
-// 排除不在engineTypes列表中的算法
-static HcclResult ExcludeAlgosNotInEngines(CostModel& model, const std::vector<std::string>& engineTypes)
+// 匹配后处理：标记 OpType 并打优先级（正向=1/否定=-1），同 OpType 其他算法不动
+static void
+ProcessMatchedResults(AlgoMatchCtx& ctx, const std::string& opType, bool isExecNegated, const MatchResult& result)
+{
+    if (isExecNegated) {
+        if (result.negatedNames.empty()) {
+            return;
+        }
+        ctx.matchedOpTypes.insert(opType);
+        MarkPriority(ctx, result.negatedNames, -1);
+    } else {
+        if (result.matchedNames.empty()) {
+            return;
+        }
+        ctx.matchedOpTypes.insert(opType);
+        MarkPriority(ctx, result.matchedNames, 1);
+    }
+}
+
+// 主函数：给 costModel 中算法打 HCCL_ALGO 优先级(正向=1/否定=-1)，不强制过滤
+HcclResult
+UpdateCostModelWithAlgo(const HcclAlgoParser& algoParser, CostModel& model, const std::vector<std::string>& engineTypes)
 {
     if (engineTypes.empty()) {
         HCCL_ERROR("engineTypes is empty");
@@ -667,31 +652,6 @@ static HcclResult ExcludeAlgosNotInEngines(CostModel& model, const std::vector<s
     }
     HCCL_INFO("[UpdateCostModelWithAlgo] engineTypes: [%s]", engines.c_str());
 
-    for (int i = 0; i < model.count; i++) {
-        if (model.costAlgoParams[i].count == 0)
-            continue;
-        std::string key(model.costAlgoParams[i].algName ? model.costAlgoParams[i].algName : "");
-        if (ContainsSendRecv(key))
-            continue; // send/recv 不处理
-        bool inEngine = false;
-        for (const auto& engine : engineTypes) {
-            if (StartsWith(key, engine)) {
-                inEngine = true;
-                break;
-            }
-        }
-        if (!inEngine) {
-            model.costAlgoParams[i].count = 0;
-        }
-    }
-    return HCCL_SUCCESS;
-}
-
-// 主函数
-HcclResult
-UpdateCostModelWithAlgo(const HcclAlgoParser& algoParser, CostModel& model, const std::vector<std::string>& engineTypes)
-{
-    CHK_RET(ExcludeAlgosNotInEngines(model, engineTypes));
     std::map<std::string, int> keyToIdx;
     for (int i = 0; i < model.count; i++) {
         if (model.costAlgoParams[i].algName != nullptr) {
@@ -740,6 +700,13 @@ UpdateCostModelWithAlgo(const HcclAlgoParser& algoParser, CostModel& model, cons
             MatchResult result;
             CollectMatchedNamesForOpType(ctx, opType, isExecNegated, hasNegatedAlgo, result);
             ProcessMatchedResults(ctx, opType, isExecNegated, result);
+            // 按算子显式配置却未命中任何候选算法: 告警提示不生效(全局配置按 opType 展开未命中属正常, 不告警)
+            if (!exec.opType.empty() && result.matchedNames.empty() && result.negatedNames.empty()) {
+                HCCL_WARNING(
+                    "[UpdateCostModelWithAlgo] HCCL_ALGO clause for opType=%s matched no candidate algorithm, "
+                    "the clause has not taken effect.",
+                    opType.c_str());
+            }
             bool allMatched = true;
             for (const auto& pair : OP_TYPES) {
                 if (matchedOpTypes.find(pair.first) == matchedOpTypes.end()) {
@@ -752,109 +719,78 @@ UpdateCostModelWithAlgo(const HcclAlgoParser& algoParser, CostModel& model, cons
             }
         }
     }
-    if (!algoParser.executorList.empty() && matchedOpTypes.empty()) {
-        HCCL_WARNING("[UpdateCostModelWithAlgo] no algorithm matched, the config has not taken effect.");
+    // 全部子句处理完仍 0 打标: 配置在当前引擎候选下未生效(算法被引擎过滤或不存在), 告警提示
+    int markedCount = 0;
+    for (int i = 0; i < model.count; i++) {
+        if (model.costAlgoParams[i].hcclAlgoPriority != 0) {
+            ++markedCount;
+        }
+    }
+    if (markedCount == 0) {
+        HCCL_WARNING("[UpdateCostModelWithAlgo] HCCL_ALGO config matched no candidate algorithm under current engine "
+                     "candidates, the config has not taken effect.");
     }
     return HCCL_SUCCESS;
 }
 
-HcclResult GetConfiguredOpTypes(HcclComm comm, std::set<HcclCMDType>& coveredOps, bool& allCovered)
-{
-    coveredOps.clear();
-    allCovered = false;
-
-    // 配置来源与 FilterCmByHcclAlgo 一致：通信域 hcclAlgo 优先，其次环境变量 HCCL_ALGO
-    std::string algoConfig;
-    HcclResult ret = HcclGetHcclAlgo(comm, algoConfig);
-    if (ret != HCCL_SUCCESS) {
-        algoConfig.clear();
-    }
-    if (algoConfig.empty()) {
-        algoConfig = GetEnv("HCCL_ALGO");
-        if (algoConfig == "EmptyString") {
-            return HCCL_SUCCESS;
-        }
-    }
-    if (algoConfig.empty()) {
-        return HCCL_SUCCESS;
-    }
-
-    HcclAlgoParser algoParser;
-    ret = algoParser.Parser(algoConfig);
-    if (ret != HCCL_SUCCESS) {
-        // 解析失败视为未配置，维持默认软策略
-        return HCCL_SUCCESS;
-    }
-
-    int count = 0;
-    const OpTypePatternEntry* patterns = GetOpTypePatternEntries(count);
-    for (const auto& exec : algoParser.executorList) {
-        if (exec.opType.empty()) {
-            allCovered = true;
-            continue;
-        }
-        auto it = OP_TYPES.find(exec.opType);
-        if (it == OP_TYPES.end()) {
-            continue;
-        }
-        for (int i = 0; i < count; ++i) {
-            if (patterns[i].pascal == it->second) {
-                coveredOps.insert(patterns[i].opType);
-                break;
-            }
-        }
-    }
-    return HCCL_SUCCESS;
-}
-
-HcclResult FilterCmByHcclAlgo(HcclComm comm, CostModel& cm, const std::vector<std::string>& candidateEngineNames)
+HcclResult MarkHcclAlgoPriority(HcclComm comm, CostModel& cm, const std::vector<std::string>& candidateEngineNames)
 {
     // 获取配置：通信域 hcclAlgo 优先，其次环境变量 HCCL_ALGO
     std::string algoConfig;
     HcclResult ret = HcclGetHcclAlgo(comm, algoConfig);
     if (ret != HCCL_SUCCESS) {
-        HCCL_WARNING("[FilterCmByHcclAlgo] HcclGetHcclAlgo failed, ret[%d], try env variable.", ret);
+        HCCL_WARNING("[MarkHcclAlgoPriority] HcclGetHcclAlgo failed, ret[%d], try env variable.", ret);
         algoConfig.clear();
     }
 
     if (algoConfig.empty()) {
         algoConfig = GetEnv("HCCL_ALGO");
         if (algoConfig == "EmptyString") {
-            HCCL_WARNING("[FilterCmByHcclAlgo] both hcclAlgo and HCCL_ALGO env are empty, skip filtering.");
+            HCCL_DEBUG("[MarkHcclAlgoPriority] both hcclAlgo and HCCL_ALGO env are empty, skip marking.");
             return HCCL_SUCCESS;
         }
     }
-    HCCL_INFO("[FilterCmByHcclAlgo] use algo config: [%s]", algoConfig.c_str());
+    HCCL_INFO("[MarkHcclAlgoPriority] use algo config: [%s]", algoConfig.c_str());
 
     // 解析算法配置
     HcclAlgoParser algoParser;
     ret = algoParser.Parser(algoConfig);
     if (ret != HCCL_SUCCESS) {
-        // 解析失败，不更新costTable, 不阻碍后续执行流程
-        HCCL_WARNING("[FilterCmByHcclAlgo] parse algo config failed, the config has not taken effect, standard format: "
-                     "'opType:executorType{level0=algoType, level1=algoType, level2=algoType};...'");
+        // 解析失败，不更新优先级, 不阻碍后续执行流程
+        HCCL_WARNING("[MarkHcclAlgoPriority] parse algo config failed, the config has not taken effect, standard "
+                     "format: 'opType:executorType{level0=algoType, level1=algoType, level2=algoType};...'");
         return HCCL_SUCCESS;
     }
 
-    // 刷新 CostModel,使用 selector 传入的候选引擎前缀
+    // 按 HCCL_ALGO 配置打优先级(只提供优先级, 不强制过滤)
     ret = UpdateCostModelWithAlgo(algoParser, cm, candidateEngineNames);
     if (ret != HCCL_SUCCESS) {
-        HCCL_ERROR("[FilterCmByHcclAlgo] UpdateCostModelWithAlgo failed, ret[%d].", ret);
+        HCCL_ERROR("[MarkHcclAlgoPriority] UpdateCostModelWithAlgo failed, ret[%d].", ret);
         return ret;
     }
 
     std::string content;
+    int preferred = 0;
+    int negated = 0;
     for (int i = 0; i < cm.count; i++) {
         if (!content.empty()) {
             content += ", ";
         }
         content += "[" + std::to_string(i) + "]"
                    + std::string(cm.costAlgoParams[i].algName ? cm.costAlgoParams[i].algName : "null") + ":"
-                   + std::to_string(cm.costAlgoParams[i].count);
+                   + std::to_string(cm.costAlgoParams[i].count) + ":prio"
+                   + std::to_string(cm.costAlgoParams[i].hcclAlgoPriority);
+        if (cm.costAlgoParams[i].hcclAlgoPriority > 0) {
+            ++preferred;
+        } else if (cm.costAlgoParams[i].hcclAlgoPriority < 0) {
+            ++negated;
+        }
     }
-    HCCL_DEBUG("[FilterCmByHcclAlgo] final costModel: %s", content.c_str());
+    HCCL_INFO("[MarkHcclAlgoPriority] final costModel: %s", content.c_str());
 
-    HCCL_INFO("[FilterCmByHcclAlgo] filter costModel success.");
+    HCCL_INFO(
+        "[MarkHcclAlgoPriority] mark hcclAlgo priority done, preferred=%d negated=%d total=%d.", preferred, negated,
+        cm.count);
     return HCCL_SUCCESS;
 }
 
