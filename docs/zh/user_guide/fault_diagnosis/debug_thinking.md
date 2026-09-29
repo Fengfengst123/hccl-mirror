@@ -24,21 +24,9 @@
 
   HCCL算子级入参记录开关，如果集群行为一致性问题无法通过其他手段锁定异常原因时，可以开启此环境变量，记录不同rank上的集合通信行为，通过卡间横向比对辅助找到行为差异引入点。
 
-    <!-- npu="A3,910b" id1 -->
 - [HCCL_DEBUG_CONFIG](../hccl_env/HCCL_DEBUG_CONFIG.md)
 
-    HCCL模块级日志开关，进行算子开发调试时可以通过此配置分析算子内部的算法选择、任务编排等日志信息。
-
-    该环境变量仅支持以下产品：
-
-    <!-- npu="A3" id2 -->
-    Atlas A3系列产品
-    <!-- end id2 -->
-
-    <!-- npu="910b" id3 -->
-    Atlas A2系列产品
-    <!-- end id3 -->
-    <!-- end id1 -->
+  HCCL模块级日志开关，进行算子开发调试时可以通过此配置分析算子内部的算法选择、任务编排等日志信息。
 
 - [HCCL_DFS_CONFIG](../hccl_env/HCCL_DFS_CONFIG.md)
 
@@ -188,7 +176,7 @@ HCCL的日志信息会记录在CANN日志中，CANN的相关日志说明请参�
 
     <!-- npu="A3,910b,910,310p" id8 -->
      针对如下产品，可以通过检索`HCCL_ENV`的关键字查询每个进程的环境变量实际生效值，例如执行：`grep -r "HCCL_ENV" run/plog/plog-_xxx_.log`。
-    
+
       <!-- npu="A3" id4 -->
     - Atlas A3系列产品
       <!-- end id4 -->
@@ -201,7 +189,7 @@ HCCL的日志信息会记录在CANN日志中，CANN的相关日志说明请参�
       <!-- npu="310p" id7 -->
     - Atlas推理系列产品
       <!-- end id7 -->
-    
+
     命令执行后，得到以下信息：
 
     ```text
