@@ -108,7 +108,7 @@ HcclResult BroadcastInitAndCheck(
     CHK_RET(CheckBroadcastInputPara(comm, buf, stream));
     CHK_RET(HcclGetCommName(comm, param.commName));
     int ret = sprintf_s(param.tag, sizeof(param.tag), "Broadcast_%s", param.commName);
-    CHK_PRT_RET((ret <= 0), "failed to fill param.tag", HCCL_E_INTERNAL);
+    CHK_PRT_RET((ret <= 0), HCCL_ERROR("failed to fill param.tag"), HCCL_E_INTERNAL);
     u32 rankSize = INVALID_VALUE_RANKSIZE;
     CHK_RET(HcclGetRankSize(comm, &rankSize));
     u32 userRank = INVALID_VALUE_RANKID;
