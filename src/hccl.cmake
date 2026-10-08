@@ -124,6 +124,7 @@ if(NOT STATIC_MODE)
     target_link_options(hccl PRIVATE
         -Wl,-z,relro
         -Wl,-z,now
+        -Wl,-z,nodelete
         -Wl,-z,noexecstack
         $<$<CONFIG:Release>:-s>
     )
