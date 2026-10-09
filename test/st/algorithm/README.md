@@ -164,7 +164,7 @@ struct BufferSemantic {
     u64                         startAddr;
     mutable u64                 size;       // 大小，源内存和目的内存共享相同的大小
     mutable bool                isReduce;   // 是否做了reduce操作，srcBufs有多个的时候必定是reduce场景
-    mutable HcclReduce0p        reduceType; // reduce操作的类型
+    mutable HcclReduceOp        reduceType; // reduce操作的类型
     mutable std::set<SrcBufDes> srcBufs;    //这块数据来自哪个或哪些rank
 };
 

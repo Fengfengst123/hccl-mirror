@@ -163,7 +163,7 @@ struct BufferSemantic {
     u64                         startAddr;
     mutable u64                 size;       // Size, shared between source and destination memory
     mutable bool                isReduce;   // Whether a reduce operation is performed. When srcBufs contains multiple entries, it must be a reduce scenario.
-    mutable HcclReduce0p        reduceType; // Type of reduce operation
+    mutable HcclReduceOp        reduceType; // Type of reduce operation
     mutable std::set<SrcBufDes> srcBufs;    // Which rank or ranks this data comes from
 };
 
