@@ -24,7 +24,7 @@ inline CcuVersion GetCcuVersion()
 {
     HcclDevType deviceType;
     HcclGetDeviceType(deviceType);
-    CcuVersion ccuVersion = (deviceType == HcclDevType::DEV_TYPE_950) ? CcuVersion::CCU_V1 : CcuVersion::CCU_V2;
+    CcuVersion ccuVersion = EqualTo950(deviceType) ? CcuVersion::CCU_V1 : CcuVersion::CCU_V2;
     if (ccuVersion == CcuVersion::CCU_V2 && !HcommIsSupportCcuV2()) {
         HCCL_WARNING("GetCcuVersion: HCOMM does not support CCU V2 interfaces, degrade to V1");
         ccuVersion = CcuVersion::CCU_V1;

@@ -139,7 +139,7 @@ HcclResult TopoMatchSqueeze2D::MatchTopo(
     CHK_RET(HcclGetRankId(comm, &myRank));
 
     CHK_PRT_RET(
-        !shouldGoOutPlace(topoInfo->deviceType),
+        !EqualToOrGreaterThan950(topoInfo->deviceType),
         HCCL_ERROR("[TopoMatchSqueeze2D][MatchTopo] Rank [%u], deviceType not supported yet.", myRank),
         HcclResult::HCCL_E_PARA);
 

@@ -330,7 +330,7 @@ bool AutoSelectorBase::IsDevType960()
 {
     HcclDevType deviceType;
     HcclGetDeviceType(deviceType);
-    return deviceType == HcclDevType::DEV_TYPE_960;
+    return EqualTo960(deviceType);
 }
 
 bool AutoSelectorBase::IsInputOutputOverlap(const OpParam& opParam) const

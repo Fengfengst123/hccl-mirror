@@ -330,16 +330,26 @@ struct HcclMem {
     uint64_t size = 0;
 };
 
-inline bool shouldGoOutPlace(HcclDevType deviceType)
+// A5及后续代际均生效，走开源流程
+inline bool EqualToOrGreaterThan950(HcclDevType deviceType)
 {
     return deviceType == HcclDevType::DEV_TYPE_950 || deviceType == HcclDevType::DEV_TYPE_960;
 }
+
+// 仅A5代际生效
+inline bool EqualTo950(HcclDevType deviceType) { return deviceType == HcclDevType::DEV_TYPE_950; }
+
+// 仅A6代际生效
+inline bool EqualTo960(HcclDevType deviceType) { return deviceType == HcclDevType::DEV_TYPE_960; }
+
+// A6及后续代际生效(暂不涉及)
+// inline bool EqualToOrGreaterThan960(HcclDevType deviceType)
 
 inline HcclResult IsOutPlaceDevice(bool& isOutPlace)
 {
     HcclDevType deviceType = HcclDevType::DEV_TYPE_COUNT;
     CHK_RET(HcclGetDeviceType(deviceType));
-    isOutPlace = shouldGoOutPlace(deviceType);
+    isOutPlace = EqualToOrGreaterThan950(deviceType);
     return HcclResult::HCCL_SUCCESS;
 }
 

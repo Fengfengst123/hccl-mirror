@@ -51,7 +51,7 @@ HcclResult HcclScatter(
     CHK_RET(InitEnvConfig());
 
     // AclGraph引导到老的流程上面
-    if (!shouldGoOutPlace(deviceType) && IsStreamCapture(stream)) {
+    if (!EqualToOrGreaterThan950(deviceType) && IsStreamCapture(stream)) {
         return HcclScatterInner(sendBuf, recvBuf, recvCount, dataType, root, comm, stream);
     }
     // 重执行引导到老的流程上面
@@ -159,7 +159,7 @@ HcclResult ScatterExecOp(
     OpParam& param, void* sendBuf, void* recvBuf, uint64_t recvCount, HcclDataType dataType, uint32_t root,
     HcclComm comm, aclrtStream stream, u32 userRankSize, uint64_t beginTime)
 {
-    if (shouldGoOutPlace(param.deviceType) && (GetHcommVersion() >= CANN_VERSION(9, 0, 0))) {
+    if (EqualToOrGreaterThan950(param.deviceType) && (GetHcommVersion() >= CANN_VERSION(9, 0, 0))) {
         CHK_RET(HcclGetOpExpansionMode(comm, param));
 
         // 9.0.0 ccu模式走老流程

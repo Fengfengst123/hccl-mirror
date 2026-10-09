@@ -26,7 +26,7 @@ HcclResult TopoMatchPcieMix::MatchTopo(
     CHK_RET(HcclGetRankId(comm, &myRank));
 
     CHK_PRT_RET(
-        !shouldGoOutPlace(topoInfo->deviceType),
+        !EqualToOrGreaterThan950(topoInfo->deviceType),
         HCCL_ERROR("[TopoMatchPcieMix] Rank [%d], deviceType not supported yet.", myRank), HcclResult::HCCL_E_PARA);
 
     // 获取通信网络层数

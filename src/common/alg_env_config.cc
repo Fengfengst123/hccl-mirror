@@ -207,7 +207,7 @@ static void LogEnvConfigSummary(HcclDevType deviceType)
         "a3ConfigSupported[%u], interHccsDisable[%u], retryMask[0x%x], "
         "inconsistentCheck[%d], taskException[%u], algoConfig[%s].",
         config.execTimeOutSet, config.execTimeout, config.multipleDimensionSplitRatioSet,
-        config.multipleDimensionSplitRatio, !shouldGoOutPlace(deviceType), config.intraRoceSwitch, isA3,
+        config.multipleDimensionSplitRatio, !EqualToOrGreaterThan950(deviceType), config.intraRoceSwitch, isA3,
         config.interHccsDisable, retryMask, config.inconsistentCheckSwitch, config.taskExceptionEnable,
         algoConfig.c_str());
 }
@@ -250,8 +250,8 @@ HcclResult InitEnvConfig()
             HCCL_ERROR_CODE(ret), ret),
         ret);
 
-    // 解析server内通信方式, A5不支持HCCL_INTRA_PCIE_ENABLE/HCCL_INTRA_ROCE_ENABLE，不解析不打印
-    if (!shouldGoOutPlace(deviceType)) {
+    // 解析server内通信方式, A5及后续代际不支持HCCL_INTRA_PCIE_ENABLE/HCCL_INTRA_ROCE_ENABLE，不解析不打印
+    if (!EqualToOrGreaterThan950(deviceType)) {
         ret = ParseIntraLinkType();
         RPT_ENV_ERR(
             ret != HCCL_SUCCESS, "EI0001", std::vector<std::string>({"value", "env", "expect"}),
@@ -893,7 +893,7 @@ HcclResult ParseOpExpansion()
         }
 
         // A5默认开启aicpu task cache
-        if (deviceType == HcclDevType::DEV_TYPE_950) {
+        if (EqualTo950(deviceType)) {
             g_algEnvConfig.aicpuCacheEnable = 1;
         }
     } else if (opExpansionModeEnv == "AIV") {
@@ -1070,7 +1070,7 @@ HcclResult ParseDeterministic()
         bool supportedDevice = false;
         supportedDevice
             = (deviceType == HcclDevType::DEV_TYPE_910B || deviceType == HcclDevType::DEV_TYPE_910_93
-               || shouldGoOutPlace(deviceType));
+               || EqualToOrGreaterThan950(deviceType));
         if (!supportedDevice) {
             HCCL_ERROR(
                 "HCCL_DETERMINISTIC is set to [%s], Reduce order preservation is not supported for "
@@ -1211,7 +1211,7 @@ bool RunIndependentOpExpansion(HcclDevType deviceType)
         return opExpansionModeEnv == "AI_CPU" || opExpansionModeEnv == "HOST_TS" || opExpansionModeEnv == "EmptyString";
     }
 
-    if (shouldGoOutPlace(deviceType)) {
+    if (EqualToOrGreaterThan950(deviceType)) {
         return opExpansionModeEnv == "AI_CPU" || opExpansionModeEnv == "AICPU_TS"
                || opExpansionModeEnv == "AICPU_CacheDisable" || opExpansionModeEnv == "HOST_TS"
                || opExpansionModeEnv == "EmptyString" || opExpansionModeEnv == "AIV"

@@ -239,7 +239,7 @@ static std::map<HcclCMDType, std::pair<std::string, std::vector<AivKernelInfo>>>
 inline const std::map<HcclCMDType, std::pair<std::string, std::vector<AivKernelInfo>>>&
 GetAivKernelInfoMap(HcclDevType deviceType)
 {
-    if (deviceType == HcclDevType::DEV_TYPE_960) {
+    if (EqualTo960(deviceType)) {
         return g_aivKernelInfoMapA6;
     }
     return g_aivKernelInfoMap;

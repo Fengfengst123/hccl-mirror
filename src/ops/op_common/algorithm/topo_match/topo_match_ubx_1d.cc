@@ -28,7 +28,7 @@ HcclResult TopoMatchUBX1d::MatchTopo(
     uint32_t myRank;
     CHK_RET(HcclGetRankId(comm, &myRank));
     CHK_PRT_RET(
-        !shouldGoOutPlace(topoInfo->deviceType),
+        !EqualToOrGreaterThan950(topoInfo->deviceType),
         HCCL_ERROR("[TopoMatchUBX1d][CollAlgFactory] [TopoMatchUBX] Rank [%d], deviceType not supported yet.", myRank),
         HcclResult::HCCL_E_PARA);
     // 1.获取并校验通信层数

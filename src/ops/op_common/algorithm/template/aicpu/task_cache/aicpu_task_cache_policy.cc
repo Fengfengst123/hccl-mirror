@@ -24,7 +24,7 @@ HcclResult AicpuTaskCachePolicy::IsAicpuTaskCacheEnable(
         return HCCL_SUCCESS;
     }
 
-    if (param.deviceType != HcclDevType::DEV_TYPE_950) {
+    if (!EqualTo950(param.deviceType)) {
         HCCL_INFO("[AicpuTaskCachePolicy][IsAicpuTaskCacheEnable] deviceType[%d] is not supported", param.deviceType);
         return HCCL_SUCCESS;
     }

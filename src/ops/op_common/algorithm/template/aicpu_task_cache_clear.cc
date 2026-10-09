@@ -13,6 +13,7 @@
 #include "hcomm_dlsym.h"
 #include "load_kernel.h"
 #include "log.h"
+#include "hccl_common.h"
 
 using namespace ops_hccl;
 
@@ -98,7 +99,7 @@ HcclResult AicpuTaskCacheCommStateCallback(HcclComm comm, HcclCommStatePhase sta
     (void)args;
     HcclDevType deviceType;
     CHK_RET(HcclGetDeviceType(deviceType));
-    if (deviceType != HcclDevType::DEV_TYPE_950) {
+    if (!EqualTo950(deviceType)) {
         HCCL_DEBUG(
             "[%s] deviceType[%u] is not DEV_TYPE_950, skip evict aicpu task cache", __func__,
             static_cast<u32>(deviceType));

@@ -2460,7 +2460,7 @@ static uint32_t GetDefaultResFractionV2(HcommCcuResType resType, HcclOpExpansion
 static uint32_t GetDefaultResFraction(HcommCcuResType resType, HcclOpExpansionMode opExpansionMode)
 {
     HcclDevType deviceType;
-    bool isV2 = (HcclGetDeviceType(deviceType) == HCCL_SUCCESS) && (deviceType == HcclDevType::DEV_TYPE_960);
+    bool isV2 = (HcclGetDeviceType(deviceType) == HCCL_SUCCESS) && EqualTo960(deviceType);
     return isV2 ? GetDefaultResFractionV2(resType, opExpansionMode) : GetDefaultResFractionV1(resType, opExpansionMode);
 }
 
@@ -3682,10 +3682,10 @@ HcclResult DecideHcclOpExpansionMode(HcclComm comm, HcclOpExpansionMode& finalMo
         finalMode = static_cast<HcclOpExpansionMode>(opExpansionModeCcuMs);
     }
 
-    // A5仅通过HcclConfigGetInfo获取展开模式，其他型号保留环境变量方式
+    // A5及后续代际仅通过HcclConfigGetInfo获取展开模式，其他型号保留环境变量方式
     HcclDevType deviceType = HcclDevType::DEV_TYPE_COUNT;
     CHK_RET(HcclGetDeviceType(deviceType));
-    if (!shouldGoOutPlace(deviceType) || !useConfigOpExpansionMode) {
+    if (!EqualToOrGreaterThan950(deviceType) || !useConfigOpExpansionMode) {
         if (GetExternalInputHcclAicpuUnfold() == true) {
             finalMode = HcclOpExpansionMode::HCCL_OP_EXPANSION_MODE_AI_CPU;
         } else if (GetExternalInputHcclAivOnlyMode() == true) {

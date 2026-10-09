@@ -27,7 +27,7 @@ HcclResult TopoMatchConcurrent::MatchTopo(
         HCCL_ERROR("[CalcTopoLevelNums] topoLevelNum[%u] is invalid.", topoInfo->topoLevelNums), HCCL_E_INTERNAL);
 
     CHK_PRT_RET(
-        !shouldGoOutPlace(topoInfo->deviceType),
+        !EqualToOrGreaterThan950(topoInfo->deviceType),
         HCCL_ERROR("[CollAlgFactory] [TopoMatchConcurrent] Rank [%d], deviceType not supported yet.", myRank_),
         HcclResult::HCCL_E_PARA);
 
