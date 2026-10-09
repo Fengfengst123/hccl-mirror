@@ -4,7 +4,7 @@ HCCL在集群信息协商时（基于root节点信息创建通信域的场景）
 
 ![image](figures/topo_detect_theory.png)
 
-1. 通信域内的root节点调用HcclGetRootinfo，会拉起一个server线程，监测一个端口，等待接收通信域内每个rank的消息；同时该接口会返回一个rootInfo变量表示server的Ip和port，交由上层框架层将rootInfo广播给通信域内的每个rank。
+1. 通信域内的root节点调用HcclGetRootInfo，会拉起一个server线程，监测一个端口，等待接收通信域内每个rank的消息；同时该接口会返回一个rootInfo变量表示server的Ip和port，交由上层框架层将rootInfo广播给通信域内的每个rank。
 2. 通信域内每个rank节点调用HcclCommInitRootInfo，同时会将rootInfo作为入参输入，该接口会拉起一个client线程，通过**host网卡**与server建立socket连接，并向server发送自己的rankInfo信息，发送完毕后进入接收状态，等待server返回完成的ranktable。
 3. Server在收集到全部rank的rankInfo信息后，会生成完整的rankTable信息，并发送给每一个client，这样每个rank上就有整个通信域的全部rank信息。
 
@@ -35,7 +35,7 @@ client节点：
 
 ## 问题排查步骤
 
-首先找到server节点，server节点在调用HcclGetRootinfo接口后会拉起一个背景线程，在配置的超时时间内等待所有的rank来连接，​因此若在超时时间内通信域内的所有rank没有成功连接到server线程，server线程就会出现超时报错。​同时server线程在超时报错后会打印出当前已连接的rank列表，根据该信息找到未连接成功的rank，再进一步排查对应rank未能成功连接的原因。
+首先找到server节点，server节点在调用HcclGetRootInfo接口后会拉起一个背景线程，在配置的超时时间内等待所有的rank来连接，​因此若在超时时间内通信域内的所有rank没有成功连接到server线程，server线程就会出现超时报错。​同时server线程在超时报错后会打印出当前已连接的rank列表，根据该信息找到未连接成功的rank，再进一步排查对应rank未能成功连接的原因。
 
 ### 部分rank未连接到server节点<a id="部分rank未连接到server节点"></a>
 
@@ -83,7 +83,7 @@ connected rankinfo：详细表示已连接的每个rank编号，示例中：`[00
       hcclLog/run/plog/plog-340_20260715182300676.log:17282:[INFO] HCCL(340,python3.9):2026-07-15-18:50:49.175.969 [op_base.cc:1281] [340]Entry-HcclCommInitRootInfoConfigInner:ranks[2048], rank[0], rootinfo: host ip[172.16.154.221] port[64000] nicDeploy[1] identifier[group_name_3], deviceLogicId[0]
       ```
 
-   - 在server节点日志路径下查找调用`HcclGetRootinfo`的时间点：执行`grep -rn "Entry-HcclGetRootInfo" xxxxx`，`xxxxx`是上一步找到的日志路径：
+   - 在server节点日志路径下查找调用`HcclGetRootInfo`的时间点：执行`grep -rn "Entry-HcclGetRootInfo" xxxxx`，`xxxxx`是上一步找到的日志路径：
      可能会搜到多条记录，取最后一条记录的时间戳`2026-07-15-18:50:49.174.231`（通信域创建接口是串行的，则当前通信域是最后一个通信域）。
 
       ```text
