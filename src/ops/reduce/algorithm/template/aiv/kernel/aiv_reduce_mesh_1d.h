@@ -91,6 +91,8 @@ private:
     __aicore__ inline void ReduceScatter()
     {
         if (blockIdx_ < coreNumFirstStage) {
+            Record(targetRank, coreNumTotal + rank_, curTag);
+            WaitFlag(rank_, coreNumTotal + targetRank, curTag);
             if (innerChunkSize > 0) {
                 uint64_t inputOffset = input_ + (targetRank * rankChunkStride + innerId * innerChunkStride) * sizeof(T);
                 uint64_t outputOffset = reinterpret_cast<uint64_t>(GetGmIn(targetRank))
@@ -161,6 +163,23 @@ private:
 
     __aicore__ inline void ReduceScatterMultiRank()
     {
+        uint32_t preSyncOffset = rankSize_ * 2;
+        for (uint32_t i = 0; i < maxRankPerCore_; ++i) {
+            uint32_t targetRank = i * useCoreNum_ + coreIdx_;
+            if (targetRank >= rankSize_) {
+                break;
+            }
+            Record(targetRank, preSyncOffset + rank_, syncTag_);
+        }
+        pipe_barrier(PIPE_ALL);
+        for (uint32_t i = 0; i < maxRankPerCore_; ++i) {
+            uint32_t targetRank = i * useCoreNum_ + coreIdx_;
+            if (targetRank >= rankSize_) {
+                break;
+            }
+            WaitFlag(rank_, preSyncOffset + targetRank, syncTag_);
+        }
+
         // 向远端写数据
         for (uint32_t i = 0; i < maxRankPerCore_; ++i) {
             // 每个core负责的rank间隔为useCoreNum_

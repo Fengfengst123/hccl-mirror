@@ -124,6 +124,10 @@ private:
 
         uint32_t dstRank = coreIdx_;
 
+        uint32_t preSyncOffset = rankSize_ * 2;
+        Record(dstRank, preSyncOffset + rank_, curTag_);
+        WaitFlag(rank_, preSyncOffset + dstRank, curTag_);
+
         // PutRemote
         srcOffset_ = input_ + dstRank * inputSliceStride_;
         dstOffset_ = reinterpret_cast<uint64_t>(GetGmIn(dstRank)) + rank_ * dataSize_;

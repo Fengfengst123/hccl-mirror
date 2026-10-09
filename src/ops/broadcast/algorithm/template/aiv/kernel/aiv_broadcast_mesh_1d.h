@@ -69,6 +69,13 @@ __aicore__ inline void AivBroadcastMesh1D::Process(uint64_t curCount, uint64_t s
     uint64_t flag_offset = blockIdx_;
     __gm__ T* inputGM = (__gm__ T*)(input_ + dataOffset);
     __gm__ T* cclGM = (__gm__ T*)(GetGmIn(peerRank) + dataOffset);
+    if (blockIdx_ == 0) {
+        Record(root_, curStageCoreNum * 2 + rank_, curTag_);
+    }
+    PipeBarrier<PIPE_ALL>();
+    if (rank_ == root_) {
+        WaitFlag(rank_, curStageCoreNum * 2 + peerRank, curTag_);
+    }
     // scatter
     if (rank_ == root_) {
         CpGM2GM(cclGM, inputGM, countPerCore);
@@ -188,6 +195,20 @@ __aicore__ inline void AivBroadcastMesh1D::ProcessCtrlCore(uint64_t len, uint32_
     // 每个 rank 的数据 count（floor），最后一份取余；地址偏移需再 *sizeof(T)
     uint64_t dataCountPerRank = len / rankSize_;
 
+    uint32_t preSyncOffset = rankSize_ * 2;
+    if (blockIdx_ == 0) {
+        Record(root_, preSyncOffset + rank_, curTag_);
+    }
+    PipeBarrier<PIPE_ALL>();
+    if (rank_ == root_) {
+        for (uint32_t idx = 0; idx < rankNumPerCore; idx++) {
+            uint32_t dstRank = blockIdx_ * rankNumPerCore + idx;
+            if (dstRank >= rankSize_) {
+                break;
+            }
+            WaitFlag(rank_, preSyncOffset + dstRank, curTag_);
+        }
+    }
     // ===== Scatter 阶段：root 把 len 切成 rankSize 份，第 dstRank 份写入 GetGmIn(dstRank) =====
     if (rank_ == root_) {
         for (uint32_t idx = 0; idx < rankNumPerCore; idx++) {

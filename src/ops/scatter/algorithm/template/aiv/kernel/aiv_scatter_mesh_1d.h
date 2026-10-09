@@ -34,6 +34,18 @@ private:
         uint32_t remainRankSize = rankSize_ % coreNum_;
         uint32_t copyNumThisCore = coreIdx_ < remainRankSize ? rankSize_ / coreNum_ + 1 : rankSize_ / coreNum_;
 
+        uint32_t preSyncOffset = rankSize_ * 2;
+        if (blockIdx_ == 0) {
+            Record(root_, preSyncOffset + rank_, curTag_);
+        }
+        pipe_barrier(PIPE_ALL);
+        if (rank_ == root_) {
+            for (int i = 0; i < copyNumThisCore; i++) {
+                uint32_t dstRank = i * coreNum_ + coreIdx_;
+                WaitFlag(rank_, preSyncOffset + dstRank, curTag_);
+            }
+        }
+
         if (copyNumThisCore == 0) {
             return;
         }

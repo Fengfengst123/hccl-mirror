@@ -208,7 +208,7 @@ public:
             gmInBase_ = base;
             gmInOffset_ = 0;
             gmOutBase_ = outBase;
-            gmOutOffset_ = FLAG1_OFFSET;
+            gmOutOffset_ = tag_ % 2 == 0 ? FLAG1_OFFSET : FLAG2_OFFSET;
         } else {
             gmInBase_ = outBase;
             gmInOffset_ = tag_ % 2 == 0 ? GM_OUT_PING_OFFSET : GM_OUT_PONG_OFFSET;

@@ -62,6 +62,9 @@ public:
 
         if (blockIdx_ < coreNumPerStage) {
             targetRank = blockIdx_;
+            uint32_t preSyncOffset = rankSize_ * 2;
+            Record(targetRank, preSyncOffset + rank_, curTag_);
+            WaitFlag(rank_, preSyncOffset + targetRank, curTag_);
             uint64_t outerOffset = rank_ * this->curCount * sizeof(T);
             outputOffset = reinterpret_cast<uint64_t>(GetGmIn(targetRank)) + outerOffset;
             Producer();
@@ -82,6 +85,16 @@ public:
 
         // SK空闲核（blockIdx >= numBlocks_）跳过生产者搬运，避免与忙核重复写数据和flag
         if (!IsIdleCore()) {
+            uint32_t preSyncOffset = rankSize_ * 2;
+            for (uint32_t i = 0; blockIdx_ + i * numBlocks_ < rankSize_; i++) {
+                targetRank = blockIdx_ + i * numBlocks_;
+                Record(targetRank, preSyncOffset + rank_, curTag_);
+            }
+            pipe_barrier(PIPE_ALL);
+            for (uint32_t i = 0; blockIdx_ + i * numBlocks_ < rankSize_; i++) {
+                targetRank = blockIdx_ + i * numBlocks_;
+                WaitFlag(rank_, preSyncOffset + targetRank, curTag_);
+            }
             for (uint32_t i = 0; blockIdx_ + i * numBlocks_ < rankSize_; i++) {
                 targetRank = blockIdx_ + i * numBlocks_;
                 uint64_t outerOffset = rank_ * this->curCount * sizeof(T);

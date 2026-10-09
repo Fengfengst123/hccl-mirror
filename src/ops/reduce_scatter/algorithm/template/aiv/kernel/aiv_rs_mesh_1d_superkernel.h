@@ -17,11 +17,11 @@
 template <typename T>
 __aicore__ inline void AivReduceScatterV2SuperKernelDispatch(SUPERKERNEL_ARGS_DEF)
 {
-    AivCommBase op;
-    op.Init(SUPERKERNEL_CLASS_INIT);
-    if (op.numBlocks_ > 2 * op.rankSize_) {
+    // 仅读取分发所需字段，不做完整Init：避免GetTag重复自增破坏相邻算子flag半区交替
+    __gm__ AivSuperKernelArgs* args = reinterpret_cast<__gm__ AivSuperKernelArgs*>(hiddenInput);
+    if (args->numBlocks > 2 * args->rankSize) {
         AivReduceScatterV2Mesh1DBigDataSuperKernel<T>(SUPERKERNEL_ARGS_CALL);
-    } else if (op.numBlocks_ >= op.rankSize_) {
+    } else if (args->numBlocks >= args->rankSize) {
         AivReduceScatterV2LocalTreeSuperKernel<T>(SUPERKERNEL_ARGS_CALL);
     } else {
         AivReduceScatterV2LocalTreeCoreCtrlSuperKernel<T>(SUPERKERNEL_ARGS_CALL);
