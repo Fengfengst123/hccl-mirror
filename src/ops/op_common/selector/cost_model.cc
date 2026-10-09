@@ -501,6 +501,13 @@ void CostModelManager::ApplyTopoPriority(CostModel& costModel, const TopoInfoWit
             newParams[j++] = costModel.costAlgoParams[i];
         }
     }
+    // 被过滤条目的param数组同样由costModel持有, 需先释放, 与FreeCostModel的释放语义保持一致
+    for (int i = 0; i < costModel.count; ++i) {
+        if (toRemove.count(i) > 0) {
+            delete[] costModel.costAlgoParams[i].param;
+            costModel.costAlgoParams[i].param = nullptr;
+        }
+    }
     delete[] costModel.costAlgoParams;
     costModel.costAlgoParams = newParams;
     costModel.count = newCount;

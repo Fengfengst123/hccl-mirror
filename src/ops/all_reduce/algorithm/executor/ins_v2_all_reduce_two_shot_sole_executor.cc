@@ -345,6 +345,9 @@ HcclResult InsV2AllReduceTwoShotSoleExecutor<AlgTopoMatch, InsAlgTemplate0, InsA
 
     u64 maxCountPerLoop
         = inCclBuffOffset_ / HCCL_MIN_SLICE_ALIGN * HCCL_MIN_SLICE_ALIGN / dataTypeSize_ / rankSize_ * rankSize_;
+    CHK_PRT_RET(
+        maxCountPerLoop == 0, HCCL_ERROR("[InsV2AllReduceTwoShotSoleExecutor][OrchestrateLoop] maxCountPerLoop is 0"),
+        HCCL_E_INTERNAL);
 
     u64 loopTimes = dataCount_ / maxCountPerLoop + static_cast<u64>(dataCount_ % maxCountPerLoop != 0);
     u64 processedDataCount = 0;

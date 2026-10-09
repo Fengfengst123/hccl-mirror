@@ -152,7 +152,13 @@ HcclResult InsTempSendHostNicDpu::DPUKernelRun(
             offset += sizePerRound;
             sizePerRound = (sizeResidue > cclInputSize) ? cclInputSize : sizeResidue;
 
-            aclrtMemcpy(cclInput, sizePerRound, input + offset, sizePerRound, ACL_MEMCPY_DEVICE_TO_DEVICE);
+            if (aclrtMemcpy(cclInput, sizePerRound, input + offset, sizePerRound, ACL_MEMCPY_DEVICE_TO_DEVICE)
+                != ACL_SUCCESS) {
+                HCCL_ERROR(
+                    "[InsTempSendHostNicDpu] aclrtMemcpy failed, rankIdx[%u] offset[%llu] sizePerRound[%llu].", rankIdx,
+                    offset, sizePerRound);
+                return HCCL_E_INTERNAL;
+            }
             void* src = cclInput;
             void* dst = static_cast<void*>(static_cast<s8*>(channels.at(rankIdx)[0].remoteCclMem.addr) + offset);
             HCCL_DEBUG("tx async inputmem's offset[%llu], size[%llu]", offset, sizePerRound);

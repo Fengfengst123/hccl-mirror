@@ -339,7 +339,7 @@ InsV2ReduceOmniPipeExecutor<AlgTopoMatch, CcuRsAlgTemplateX, CcuRsAlgTemplateY, 
     resourceRequest.notifyNumOnMainThread += 1;
     resourceRequest.notifyNumPerThread.assign(resourceRequest.slaveThreadNum, 1);
     HCCL_DEBUG(
-        "[%s] slaveThreadNum:%d, notifyNumOnMainThread:%d", __func__, resourceRequest.slaveThreadNum,
+        "[%s] slaveThreadNum:%u, notifyNumOnMainThread:%u", __func__, resourceRequest.slaveThreadNum,
         resourceRequest.notifyNumOnMainThread);
     HCCL_DEBUG("end CalcRes");
     return HCCL_SUCCESS;

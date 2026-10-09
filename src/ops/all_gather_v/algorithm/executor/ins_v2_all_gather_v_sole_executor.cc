@@ -142,13 +142,17 @@ HcclResult InsV2AllGatherVSoleExecutor<AlgTopoMatch, InsAlgTemplate>::Orchestrat
         maxDataSizePerLoop = transportBoundDataSize;
     }
     u64 maxCountPerLoop = maxDataSizePerLoop / dataTypeSize_;
+    CHK_PRT_RET(
+        maxCountPerLoop == 0, HCCL_ERROR("[InsV2AllGatherVSoleExecutor][OrchestrateLoop] maxCountPerLoop is 0"),
+        HCCL_E_INTERNAL);
 
     // 计算loopTimes
     u64 maxSendDataCount = 0;
     for (u64 j = 0; j < rankSize_; j++) {
         maxSendDataCount = std::max(maxSendDataCount, counts[j]);
     }
-    u64 loopTimes = 1 + ((maxSendDataCount - 1) / maxCountPerLoop);
+    // 全0 counts时无数据需要搬运, loopTimes为0直接空过, 防止u64下溢
+    u64 loopTimes = (maxSendDataCount == 0) ? 0 : (1 + ((maxSendDataCount - 1) / maxCountPerLoop));
     // 带V算子统计所有Rank的processedDataCount
     std::vector<u64> allRankProcessedDataCount(rankSize_, 0);
     tempAlgParams.sliceSize = 0;

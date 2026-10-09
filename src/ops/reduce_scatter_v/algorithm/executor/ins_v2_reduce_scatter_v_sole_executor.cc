@@ -149,7 +149,8 @@ HcclResult InsV2ReduceScatterVSoleExecutor<AlgTopoMatch, InsAlgTemplate>::Orches
     for (u64 i = 0; i < rankSize_; i++) {
         maxRecvDataCount = std::max(maxRecvDataCount, sendCounts[i]);
     }
-    u64 loopTimes = 1 + ((maxRecvDataCount - 1) / maxDataCountPerLoop); // 向上取整
+    // 全0 sendCounts时无数据需要搬运, loopTimes为0直接空过, 防止u64下溢
+    u64 loopTimes = (maxRecvDataCount == 0) ? 0 : (1 + ((maxRecvDataCount - 1) / maxDataCountPerLoop)); // 向上取整
 
     u64 processedDataCount = 0;
     tempAlgParams.allRankSliceSize.resize(rankSize_);
