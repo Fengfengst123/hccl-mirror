@@ -94,8 +94,9 @@ aclrtMalloc(&sendBuf, sendSize, ACL_MEM_MALLOC_HUGE_ONLY);
 aclrtMalloc(&recvBuf, recvSize, ACL_MEM_MALLOC_HUGE_ONLY);
 
 // 初始化通信域和流
+uint32_t deviceId = 0;  // 当前进程使用的Device逻辑ID
 HcclComm hcclComm;
-HcclCommInitRootInfo(rankSize, &rootInfo, devId, &hcclComm);
+HcclCommInitRootInfo(rankSize, &rootInfo, deviceId, &hcclComm);
 
 // 创建任务流
 aclrtStream stream;
