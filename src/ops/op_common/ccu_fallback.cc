@@ -358,6 +358,11 @@ HcclResult CheckCcuResNegotiation(HcclComm comm, const OpParam& param, bool loca
         "[%s] start, comm[%p], commName[%s], algName[%s], tag[%s], opType[%u], localResAvailable[%d].", __func__, comm,
         param.commName, param.algName, param.tag, static_cast<u32>(param.opType), static_cast<int>(localResAvailable));
 
+    if (param.opType == HcclCMDType::HCCL_CMD_SEND || param.opType == HcclCMDType::HCCL_CMD_RECEIVE) {
+        HCCL_INFO("[%s] send/recv op, skip ccu res negotiation, tag[%s].", __func__, param.tag);
+        return HCCL_SUCCESS;
+    }
+
     u32 rankSize = 0;
     CHK_RET(HcclGetRankSize(comm, &rankSize));
     if (rankSize <= 1) {
@@ -504,6 +509,11 @@ HcclResult CheckCcuParamAndFallback(
         "[%s] entry, comm[%p], commName[%s], algName[%s], tag[%s], opType[%u], opExecuteConfig[%u], count[%llu].",
         __func__, comm, param.commName, algName.c_str(), param.tag, static_cast<u32>(param.opType),
         static_cast<uint32_t>(param.opExecuteConfig), param.DataDes.count);
+
+    if (param.opType == HcclCMDType::HCCL_CMD_SEND || param.opType == HcclCMDType::HCCL_CMD_RECEIVE) {
+        HCCL_INFO("[%s] send/recv op, skip ccu param check and fallback, tag[%s].", __func__, param.tag);
+        return HCCL_SUCCESS;
+    }
 
     if (strncmp(param.tag, "SelectAlg_", strlen("SelectAlg_")) == 0) {
         HCCL_INFO("[%s] aiv sk selector, skip ccu param check, tag[%s].", __func__, param.tag);
