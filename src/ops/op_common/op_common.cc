@@ -1140,9 +1140,6 @@ HcclResult HcclAicpuKernelEntranceLaunch(
     CHK_RET(AicpuKernelLaunch(comm, param, unfoldThread));
     CHK_PTR_NULL(comm);
 
-    // OrderLaunch第二阶段
-    CHK_RET(orderLaunch.HcclOrderLaunchToKernelStream(comm, unfoldThread, HOST_ORDER_THREAD_NOTIFY_IDX));
-
     std::string kernelName = "HcclLaunchAicpuKernel";
     char* kernelNameCStr = const_cast<char*>(kernelName.c_str());
     HcclResult ret = HcclReportAicpuKernel(comm, beginTime, kernelNameCStr);
@@ -1152,6 +1149,10 @@ HcclResult HcclAicpuKernelEntranceLaunch(
             beginTime, kernelNameCStr, ret);
         return ret;
     }
+
+    // OrderLaunch第二阶段
+    CHK_RET(orderLaunch.HcclOrderLaunchToKernelStream(comm, unfoldThread, HOST_ORDER_THREAD_NOTIFY_IDX));
+
     // Host stream等待Device的通知
     AicpuTimeout timeout = DeriveAicpuTimeout(param.opConfig.execTimeout);
     u32 hostNotifyWaitTime = IsHcommDefaultTimeoutSupported() ?
