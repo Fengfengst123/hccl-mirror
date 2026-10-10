@@ -5,7 +5,7 @@
 ## 核心功能
 
 - 提供单机、多机环境中的高性能集合通信和点对点通信。
-- 支持AllReduce、Broadcast、AllGather、ReduceScatter、AlltoAll、Send、Receive等集合通信原语。
+- 支持AllReduce、Broadcast、AllGather、ReduceScatter、AlltoAll等集合通信原语，以及Send、Receive等点对点通信原语。
 - 支持Ring、Mesh、Recursive Halving-Doubling（RHD）等通信算法。
 - 支持HCCS、RoCE、PCIe、UB（Unified Bus）等高速通信链路。
 - 支持单算子和图模式两种执行模式。

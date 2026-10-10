@@ -222,7 +222,7 @@ HcclCreateSubCommConfig(&globalHcclComm, 4, rankIds, 1, devId, &config, &hcclCom
 
 集合通信是指多个NPU共同参与进行数据传输，从而形成一次集体操作的通信模式，常用于大规模集群中不同NPU之间的梯度同步和参数更新等场景。
 
-HCCL支持AllReduce、Broadcast、AllGather、Scatter、ReduceScatter、Reduce、AlltoAll和AlltoAllV等通信算子，并提供了对应的API供开发者调用，用于快速实现集合通信能力。
+HCCL支持AllReduce、Broadcast、AllGather、AllGatherV、Scatter、ReduceScatter、ReduceScatterV、Reduce、AlltoAll、AlltoAllV和AlltoAllVC等通信算子，并提供了对应的API供开发者调用，用于快速实现集合通信能力。
 
 ### Broadcast
 
