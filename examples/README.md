@@ -33,3 +33,4 @@
 ## 自定义集合通信算子
 
 - [自定义 AllGather 算子](./05_custom_ops_allgather)
+- [自定义 ReduceScatter 算子](./06_custom_ops_reduce_scatter)

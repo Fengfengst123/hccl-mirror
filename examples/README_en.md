@@ -33,3 +33,4 @@ This directory provides sample code for using the HCCL interface to implement co
 ## Custom Collective Communication Operator
 
 - [Custom AllGather Operator](./05_custom_ops_allgather)
+- [Custom ReduceScatter Operator](./06_custom_ops_reduce_scatter)
