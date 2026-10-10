@@ -58,7 +58,7 @@ HCCL提供了多种故障检测功能的开关设置，包括建链故障探测�
 
     **说明**：
 
-    1. 该功能当前仅支持Atlas A3系列产品，仅在通信算子展开模式为AI_CPU时生效。
+    1. 该功能当前仅支持Atlas A3系列产品、Ascend 950PR&950DT系列产品，仅在通信算子展开模式为AI_CPU时生效。
     2. 该功能为异常时维测功能，开启后会对业务执行性能产生影响，因此不建议业务正常运行时开启。
     3. 当该配置取值小于100ms时，无法保证功能的完备性，同时可能对业务执行性能、功能造成较大影响，甚至可能导致业务执行失败。
     4. 该配置取值较小时，存在“$HOME/ascend/log/run/device-\*/”目录下日志刷屏的风险。
@@ -76,7 +76,7 @@ export HCCL_DFS_CONFIG="connection_fault_detection_time:30,cluster_heartbeat:on,
 
 ## 使用约束
 
-**当前版本Ascend 950PR&950DT系列产品仅支持配置以下三个字段：task_exception、cluster_heartbeat、inconsistent_check。**
+**当前版本Ascend 950PR&950DT系列产品仅支持配置以下四个字段：task_exception、cluster_heartbeat、inconsistent_check、task_monitor_interval。**
 
 ## 产品支持情况
 
