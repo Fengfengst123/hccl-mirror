@@ -152,7 +152,7 @@ private:
  *
  * 注意：变量名拼接需要经过两层宏展开（HCCL_ALGO_PLUGIN_CONCAT_ / HCCL_ALGO_PLUGIN_CONCAT）
  * __LINE__ 才能被展开成具体行号，否则同一个文件里多次使用本宏（例如一个so里注册多个算法，
- * 见examples/06_custom_algo_plugin/AllReduce/示例）会因变量名都叫`_hccl_algo_reg___LINE__`
+ * 见experimental/eco_system/algo_plugin/hccl_algo_plugin/example/AllReduce/示例）会因变量名都叫`_hccl_algo_reg___LINE__`
  * 而重复定义编译失败。
  */
 #define HCCL_ALGO_PLUGIN_EXPORT extern "C" __attribute__((visibility("default")))
