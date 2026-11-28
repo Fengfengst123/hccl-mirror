@@ -897,6 +897,25 @@ HcclResult CalcChannelRequestNhrHighestHostRoce(
 }
 
 #if !defined(AICPU_COMPILE) && CANN_VERSION_NUM >= CANN_VERSION(9, 1, 0)
+// union按type复用同一块内存, 仅前缀有效, 尾部字节构造路径不同不保证相等, 按type取有效长度比较
+static bool IsCommAddrEqual(const CommAddr& addr0, const CommAddr& addr1)
+{
+    if (addr0.type != addr1.type) {
+        return false;
+    }
+    switch (addr0.type) {
+        case COMM_ADDR_TYPE_IP_V4:
+            return memcmp(&addr0.id, &addr1.id, sizeof(addr0.id)) == 0;
+        case COMM_ADDR_TYPE_IP_V6:
+            return memcmp(&addr0.addr6, &addr1.addr6, sizeof(addr0.addr6)) == 0;
+        // ID端点union内容为构造残留值不承载地址身份, 与hcomm侧MatchEndpointByAddr一致: type相等即相等
+        case COMM_ADDR_TYPE_ID:
+            return true;
+        default:
+            return memcmp(addr0.eid, addr1.eid, sizeof(addr0.eid)) == 0;
+    }
+}
+
 static bool IsEndPointEqual(EndpointDesc& endPoint0, EndpointDesc& endPoint1)
 {
     HCCL_INFO(
@@ -907,10 +926,8 @@ static bool IsEndPointEqual(EndpointDesc& endPoint0, EndpointDesc& endPoint1)
         endPoint1.protocol, endPoint1.commAddr.type, endPoint1.commAddr.id);
     if (endPoint0.protocol == CommProtocol::COMM_PROTOCOL_PCIE) {
         return (endPoint0.protocol == endPoint1.protocol) && (endPoint0.commAddr.type == endPoint1.commAddr.type);
-    } else {
-        return (endPoint0.protocol == endPoint1.protocol) && (endPoint0.commAddr.type == endPoint1.commAddr.type)
-               && (memcmp(endPoint0.commAddr.eid, endPoint1.commAddr.eid, sizeof(endPoint0.commAddr.eid)) == 0);
     }
+    return (endPoint0.protocol == endPoint1.protocol) && IsCommAddrEqual(endPoint0.commAddr, endPoint1.commAddr);
 }
 
 static bool IsPortEqual(EndpointDesc& endPoint0, EndpointDesc& endPoint1, bool isIsolation)
