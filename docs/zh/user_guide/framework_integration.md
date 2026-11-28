@@ -15,7 +15,10 @@ AI框架主要有三种编程执行形态，单算子模式、图模式（Ascend
 
 针对TensorFlow框架，HCCL通过TensorFlow适配插件TF Adapter对接TensorFlow框架，详细使用方法可参见《[TensorFlow 模型迁移指南](https://hiascend.com/document/redirect/tfcommunityguide)》。
 
+针对vLLM、SGLang等推理引擎，其在昇腾上的分布式推理（张量并行TP、专家并行EP、数据并行DP、上下文并行CP）同样以HCCL作为通信底座，但集成适配由引擎侧的适配工程承担（如《[vllm-ascend 文档](https://vllm-ascend.readthedocs.io/en/latest/)》），无需开发者直接对接HCCL。以vllm-ascend为例，其对HCCL的消费方式包括：通过TorchNPU以`backend="hccl"`使用`torch.distributed`；通过ctypes直接调用`libhccl.so`的C接口实现流感知的精细控制；MoE场景通过MC2（Kernel Fusion Custom）融合通信算子框架执行AlltoAll。KV Cache跨节点传输（PD分离场景）由昇腾单边通信库HIXL（Huawei Xfer Library，参见《[HIXL 仓库介绍](https://gitcode.com/cann/hixl)》）承担，与HCCL集合通信分工互补。推理部署中常用的HCCL环境变量（如`HCCL_BUFFSIZE`、`HCCL_OP_EXPANSION_MODE`）可参见[环境变量参考](./hccl_env/README.md)。
+
 ## 示例代码
 
 - [PyTorch框架调用](../../../examples/03_ai_framework/01_pytorch)
 - [TensorFlow框架调用](../../../examples/03_ai_framework/02_tensorflow)
+- [MindSpore框架调用](../../../examples/03_ai_framework/03_mindspore)

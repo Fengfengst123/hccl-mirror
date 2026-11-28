@@ -17,7 +17,10 @@ For PyTorch and MindSpore frameworks, HCCL invocation has been integrated into t
 
 For the TensorFlow framework, HCCL interfaces with TensorFlow through the TensorFlow adapter plugin TF Adapter. For detailed usage, see *[TensorFlow Model Migration Guide](https://hiascend.com/en/document/redirect/tfcommunityguide)*.
 
+For inference engines such as vLLM and SGLang, distributed inference on Ascend (tensor parallelism [TP], expert parallelism [EP], data parallelism [DP], and context parallelism [CP]) also uses HCCL as the communication backbone, but the integration is handled by engine-side adaptation projects (such as *[vllm-ascend documentation](https://vllm-ascend.readthedocs.io/en/latest/)*), so developers do not need to interface with HCCL directly. Taking vllm-ascend as an example, HCCL is consumed in three ways: through TorchNPU with `backend="hccl"` via `torch.distributed`; through ctypes direct calls to the C APIs of `libhccl.so` for stream-aware fine-grained control; and through the MC2 (Kernel Fusion Custom) custom operator framework for AlltoAll in MoE scenarios. Cross-node KV Cache transfer (PD disaggregation) is handled by the unilateral communication library HIXL (Huawei Xfer Library; see the [HIXL repository](https://gitcode.com/cann/hixl)), which complements HCCL collective communication. Common HCCL environment variables for inference deployment (such as `HCCL_BUFFSIZE` and `HCCL_OP_EXPANSION_MODE`) are described in the [environment variable reference](./hccl_env/README.md).
+
 ## Sample Code
 
 - [PyTorch Framework Invocation](../../../examples/03_ai_framework/01_pytorch)
 - [TensorFlow Framework Invocation](../../../examples/03_ai_framework/02_tensorflow)
+- [MindSpore Framework Invocation](../../../examples/03_ai_framework/03_mindspore)

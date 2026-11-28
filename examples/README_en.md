@@ -27,6 +27,7 @@ This directory provides sample code for using the HCCL interface to implement co
 
 - [PyTorch](./03_ai_framework/01_pytorch)
 - [TensorFlow](./03_ai_framework/02_tensorflow)
+- [MindSpore](./03_ai_framework/03_mindspore)
 
 ## Custom Point-to-Point Communication Operator
 
