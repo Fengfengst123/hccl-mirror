@@ -35,8 +35,12 @@ bool IsReduceScatterAivWriteEnabled(const OpParam& param, const TopoInfoWithNetL
 
 std::vector<CostModelParam> AivTempReduceScatterMesh1D::CalcCostCoeff(CalcCostCoeffParam param)
 {
-    // int portNum = (param.portNum.size() == 1) ? param.portNum[0] : (param.portNum[0] + param.portNum[1]);
-    int portNum = (param.netType == CommTopo::COMM_TOPO_CLOS) ? (param.portNum[0] + param.portNum[1]) : 1;
+    int portNum = 1;
+    if (!param.portNum.empty()) {
+        portNum = (param.netType == CommTopo::COMM_TOPO_CLOS && param.portNum.size() >= 2) ?
+                      (param.portNum[0] + param.portNum[1]) :
+                      param.portNum[0];
+    }
     int kernelNum = 1;
     int taskNum = 5 * (param.rankSize - 1);
     float A = 0.0f;
