@@ -15,7 +15,7 @@
 #include "common.h"
 #include "log.h"
 
-namespace ccu = ::AscendC::ccu;
+namespace ccu = ::hcomm::ccu;
 
 namespace ops_hccl_ag {
 
