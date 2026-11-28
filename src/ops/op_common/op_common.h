@@ -77,7 +77,7 @@ HcclResult GetAlgResWithEngine(
     HcclComm comm, OpParam& param, AlgResourceRequest& resRequest,
     std::unique_ptr<AlgResourceCtxSerializable>& resCtxHost, TopoInfoWithNetLayerDetails* topoInfo,
     AlgHierarchyInfoForAllLevel& algHierarchyInfo, void** resCtxSequence, uint64_t& size, bool increCreateChannelFlag,
-    const ResPackGraphMode& resPack);
+    const ResPackGraphMode& resPack, u32* newLinkCountThisStep = nullptr);
 
 HcclResult GetAlgResAICPU(
     HcclComm comm, const OpParam& param, AlgResourceRequest& resRequest,
@@ -143,12 +143,13 @@ HcclResult HcclAivCacheCheckAndReplay(HcclComm comm, OpParam& param, bool& cache
 
 HcclResult GetAlgResAiv(
     HcclComm comm, const OpParam& param, AlgResourceRequest& resRequest, TopoInfoWithNetLayerDetails* topoInfo,
-    AlgHierarchyInfoForAllLevel& algHierarchyInfo, void** resCtxSequence, uint64_t& size, bool increCreateChannelFlag);
+    AlgHierarchyInfoForAllLevel& algHierarchyInfo, void** resCtxSequence, uint64_t& size, bool increCreateChannelFlag,
+    u32* newLinkCountThisStep = nullptr);
 
-// incremental=true 为BatchSendRecv增量建链专用
+// incremental=true 为BatchSendRecv增量建链专用; newLinkCountThisStep回传本步新建链数(仅增量分支有效)
 HcclResult HcclAllocAlgResourceAiv(
     HcclComm comm, const OpParam& param, AlgResourceRequest& resRequest, AlgResourceCtxSerializable* resCtxHost,
-    bool incremental = false);
+    bool incremental = false, u32* newLinkCountThisStep = nullptr);
 
 HcclResult GetAlgResDPU(
     HcclComm comm, const OpParam& param, AlgResourceRequest& resRequest,
