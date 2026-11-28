@@ -11,6 +11,8 @@
 #include "cost_table.h"
 
 #include <algorithm>
+#include <climits>
+#include <map>
 #include <new>
 
 #include "auto_selector_base.h"
@@ -161,10 +163,10 @@ void CostTableManager::DumpCostTable(const CostTable& ct)
 }
 
 HcclResult CostTableManager::GenerateCostTable(
-    CostModel& cm, CostTable& ct, const TopoInfoWithNetLayerDetails* topoInfo, const OpParam& opParam)
+    CostModel& cm, CostTable& ct, const TopoInfoWithNetLayerDetails* topoInfo, const OpParam& opParam,
+    const std::vector<std::pair<OpExecuteConfig, int>>& enginePriority)
 {
-    // 运行时阶段选路管线(通信域阶段见 cost_model.h):
-    // Phase1 过滤+算cost → Phase2 opPriority 排他 → Phase3 HCCL_ALGO 收敛 → tuner 改cost → SelectMinCost
+    // Phase1 过滤算cost → PhaseE 引擎层收敛 → Phase2/3 收敛(E/2 于 tuner 时让位) → tuner → SelectMinCost
     HCCL_INFO("[CostTableManager] generate cost table, algCount=%d.", cm.count);
     ct.costs = nullptr;
     ct.count = 0;
@@ -184,6 +186,7 @@ HcclResult CostTableManager::GenerateCostTable(
 
     OpFilterAndCalcCost(cm, ct, topoInfo, opParam, dataSize, hcclPrio); // Phase 1
     if (!HcclTunerIsLoaded()) {
+        ConvergeEngineTier(ct, hcclPrio, enginePriority); // Phase E
         ApplyOpPriority(ct, opParam, topoInfo, hcclPrio); // Phase 2
     }
     ConvergeHcclAlgoTier(ct, hcclPrio); // Phase 3
@@ -271,6 +274,67 @@ void CostTableManager::OpFilterAndCalcCost(
         }
     }
     HCCL_INFO("[CostTableManager] op filter done, survivors=%d preferred=%d negated=%d.", ct.count, preferred, negated);
+}
+
+void CostTableManager::ConvergeEngineTier(
+    CostTable& ct, std::vector<int>& hcclPrio, const std::vector<std::pair<OpExecuteConfig, int>>& enginePriority)
+{
+    // 引擎层收敛: 仅留最高引擎优先级层(否定不参与判定), 引擎档优先于 HCCL_ALGO/opPriority
+    if (ct.count <= 0 || enginePriority.empty()) {
+        return;
+    }
+    std::map<OpExecuteConfig, int> enginePrio;
+    for (const auto& e : enginePriority) {
+        enginePrio[e.first] = e.second;
+    }
+    std::vector<int> prioOf(ct.count, 0);
+    int activeMaxPrio = INT_MIN;
+    for (int i = 0; i < ct.count; ++i) {
+        const AlgAttrs* attrs = AlgAttrsRegistry::Instance().Get(ct.costs[i].algName);
+        int prio = 0;
+        if (attrs != nullptr) {
+            auto it = enginePrio.find(attrs->engine);
+            if (it != enginePrio.end()) {
+                prio = it->second;
+            }
+        }
+        prioOf[i] = prio;
+        if (hcclPrio[static_cast<size_t>(i)] >= 0) {
+            activeMaxPrio = std::max(activeMaxPrio, prio);
+        }
+    }
+    if (activeMaxPrio == INT_MIN) {
+        return;
+    }
+    std::vector<int> keepIndices;
+    for (int i = 0; i < ct.count; ++i) {
+        if (prioOf[i] == activeMaxPrio && hcclPrio[static_cast<size_t>(i)] >= 0) {
+            keepIndices.push_back(i);
+        }
+    }
+    if (keepIndices.empty() || static_cast<int>(keepIndices.size()) == ct.count) {
+        return;
+    }
+    for (int i = 0; i < ct.count; ++i) {
+        if (prioOf[i] != activeMaxPrio && hcclPrio[static_cast<size_t>(i)] > 0) {
+            HCCL_WARNING(
+                "[CostTableManager] HCCL_ALGO configured algName=%s filtered: enginePriority=%d < %d, engine tier "
+                "takes precedence, select within highest engine tier.",
+                ct.costs[i].algName ? ct.costs[i].algName : "null", prioOf[i], activeMaxPrio);
+        }
+    }
+    if (UNLIKELY(HcclCheckLogLevel(DLOG_INFO))) {
+        for (int i = 0; i < ct.count; ++i) {
+            if (prioOf[i] != activeMaxPrio || hcclPrio[static_cast<size_t>(i)] < 0) {
+                HCCL_INFO(
+                    "[CostTableManager] algName=%s filtered: enginePriority=%d(hcclAlgoPriority=%d) < %d.",
+                    ct.costs[i].algName ? ct.costs[i].algName : "null", prioOf[i], hcclPrio[static_cast<size_t>(i)],
+                    activeMaxPrio);
+            }
+        }
+    }
+    CompactCostTable(ct, hcclPrio, keepIndices);
+    HCCL_INFO("[CostTableManager] enginePriority applied, kept=%d.", ct.count);
 }
 
 void CostTableManager::ApplyOpPriority(

@@ -455,7 +455,7 @@ SelectorEngine::Run(HcclComm comm, OpParam& param, TopoInfoWithNetLayerDetails* 
         CHK_RET(InitCostModel(comm, topoInfo, param, cm));
     }
 
-    // step 2: 生成 costTable(Phase1 过滤+算cost → Phase2 排他 → Phase3 收敛);
+    // step 2: 生成 costTable(Phase1 过滤+算cost → PhaseE 引擎层收敛 → Phase2 排他 → Phase3 收敛);
     // 软策略(opCustomCheck/opPriority)是否让位由各过滤点按 tuner 加载状态现场判定，硬约束不让位。
     CostTable ct{nullptr, 0};
     // RAII 兜底: tuner 失败等早退路径同样释放 costTable(经 FreeCostTable, 申请/释放同模块)
@@ -464,14 +464,14 @@ SelectorEngine::Run(HcclComm comm, OpParam& param, TopoInfoWithNetLayerDetails* 
         ~CostTableGuard() { CostTableManager::FreeCostTable(ctRef); }
     } ctGuard{ct};
 
-    CHK_RET(CostTableManager::Global()->GenerateCostTable(*cm, ct, topoInfo, param));
+    const std::vector<std::pair<OpExecuteConfig, int>> enginePriority = GetEnginePriority(param.opExecuteConfig);
+    CHK_RET(CostTableManager::Global()->GenerateCostTable(*cm, ct, topoInfo, param, enginePriority));
 
     bool tunerModified = false;
     // step 3: tuner 改 cost(未加载或空表跳过)
     CHK_RET(TunerEnrichCostTable(comm, ct, param, tunerModified));
 
     // step 4: 引擎优先级分层取最优(最高优先级层内取cost最低, 参见GetEnginePriority)
-    const std::vector<std::pair<OpExecuteConfig, int>> enginePriority = GetEnginePriority(param.opExecuteConfig);
     HcclResult ret = SelectMinCost(ct, param, tunerModified, enginePriority, algName);
 
     if (ret != HCCL_SUCCESS) {

@@ -275,10 +275,12 @@ CostTableManager::~CostTableManager() {}
 
 // 由 costModel 填充 costs(每条 cost=1.0f), 空模型保持空表; costs 由 FreeCostTable 释放
 HcclResult CostTableManager::GenerateCostTable(
-    CostModel& cm, CostTable& ct, const TopoInfoWithNetLayerDetails* topoInfo, const OpParam& opParam)
+    CostModel& cm, CostTable& ct, const TopoInfoWithNetLayerDetails* topoInfo, const OpParam& opParam,
+    const std::vector<std::pair<OpExecuteConfig, int>>& enginePriority)
 {
     (void)topoInfo;
     (void)opParam;
+    (void)enginePriority;
     if (cm.count <= 0 || cm.costAlgoParams == nullptr) {
         ct.costs = nullptr;
         ct.count = 0;

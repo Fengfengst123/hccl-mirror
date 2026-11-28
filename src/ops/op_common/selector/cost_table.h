@@ -73,9 +73,11 @@ public:
 
     ~CostTableManager();
 
-    // 生成 costTable: Phase1 op 过滤+算cost → Phase2 opPriority 排他 → Phase3 HCCL_ALGO 收敛
+    // 生成 costTable: Phase1 op 过滤+算cost → PhaseE 引擎层收敛 → Phase2 opPriority 排他 → Phase3 HCCL_ALGO 收敛
     HcclResult GenerateCostTable(
-        CostModel& cm, CostTable& ct, const TopoInfoWithNetLayerDetails* topoInfo, const OpParam& opParam);
+        CostModel& cm, CostTable& ct, const TopoInfoWithNetLayerDetails* topoInfo, const OpParam& opParam,
+        const std::vector<std::pair<OpExecuteConfig, int>>& enginePriority
+        = std::vector<std::pair<OpExecuteConfig, int>>());
     // 释放 GenerateCostTable 内部申请的 costs(申请/释放同模块, 调用方 RAII 或收尾时调用)
     static void FreeCostTable(CostTable& ct);
     HcclResult QueryUbUtil(
@@ -89,6 +91,9 @@ private:
     void OpFilterAndCalcCost(
         CostModel& cm, CostTable& ct, const TopoInfoWithNetLayerDetails* topoInfo, const OpParam& opParam, u64 dataSize,
         std::vector<int>& hcclPrio);
+    // Phase E: 引擎层收敛, 仅留最高引擎优先级层(引擎档优先于 HCCL_ALGO/opPriority)
+    void ConvergeEngineTier(
+        CostTable& ct, std::vector<int>& hcclPrio, const std::vector<std::pair<OpExecuteConfig, int>>& enginePriority);
     // Phase 2: opPriority 排他(tuner 跳过): keep = (opPriority 命中 ∪ preferred) ∩ 非否定
     void ApplyOpPriority(
         CostTable& ct, const OpParam& opParam, const TopoInfoWithNetLayerDetails* topoInfo, std::vector<int>& hcclPrio);
